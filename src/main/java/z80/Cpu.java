@@ -254,6 +254,8 @@ public class Cpu {
 			flags = adjustFlag(flags, F_N, true);
 			flags = adjustFlag(flags, F_C, (after & ~0xff) != 0);
 			registers.reg[_F] = flags;
+			
+			tStates += 4;
 		}
 
 		public boolean willHandle(int instr) {
@@ -282,14 +284,25 @@ public class Cpu {
 	class Handler_INC implements Handler {
 		public void handle(int instr) {
 			int reg = (instr & 0x38) >> 3;
+			int res;
 			if (reg == 6) {
 				memory.set8bit(registers.getHL(),
 						memory.get8bit(registers.getHL()) + 1);
+				res = memory.get8bit(registers.getHL());
 				tStates += 11;
 			} else {
 				registers.reg[reg]++;
+				res = registers.reg[reg];
 				tStates += 4;
 			}
+
+			int flags = registers.reg[_F];
+			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
+			flags = adjustFlag(flags, F_Z, res == 0);
+			flags = adjustFlag(flags, F_H, (res & 0x0f) == 0);
+			flags = adjustFlag(flags, F_PV, res == 0x80);
+			flags = adjustFlag(flags, F_N, false);
+			registers.reg[_F] = flags;
 		}
 
 		public boolean willHandle(int instr) {

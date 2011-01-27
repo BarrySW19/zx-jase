@@ -157,6 +157,25 @@ public class CpuTests {
 	}
 
 	@Test
+	public void testFlags_SUB() {
+		cpu.getRegisters().reg[_A] = 127;
+		cpu.getRegisters().reg[_H] = 0xc0;
+
+		execute(0x94);
+		assertEquals(191, cpu.getRegisters().reg[_A]);
+		assertTrue(cpu.getRegisters().isFlag(F_PV));
+		assertEquals(4L, cpu.getTStates());
+		
+		cpu.getRegisters().reg[_A] = 0x91;
+		cpu.getRegisters().reg[_H] = 1;
+		execute(0x94);
+		assertFalse(cpu.getRegisters().isFlag(F_H));
+
+		execute(0x94);
+		assertTrue(cpu.getRegisters().isFlag(F_H));
+	}
+
+	@Test
 	public void test_INC_DEC_A() {
 		cpu.getRegisters().reg[_A] = 4;
 		execute(0x3C);
