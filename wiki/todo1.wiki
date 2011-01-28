@@ -1,0 +1,4 @@
+fix INC:
+{{{
+registers.reg[reg] = (registers.reg[reg] + 1) & 0xff;
+}}}
