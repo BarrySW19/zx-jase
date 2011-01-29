@@ -3,6 +3,7 @@ package z80;
 public class Registers {
 	
 	int[] reg = new int[20];
+	boolean iff1, iff2;
 	
 	static int F_S = 7;
 	static int F_Z = 6;
