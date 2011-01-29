@@ -8,7 +8,7 @@ public class Memory {
 	}
 
 	public int get16bit(int addr) {
-		return get8bit(addr) << 8 | get8bit(addr + 1);
+		return get8bit(addr) | (get8bit(addr + 1) << 8);
 	}
 
 	public void set8bit(int addr, int val) {
@@ -16,7 +16,7 @@ public class Memory {
 	}
 
 	public void set16bit(int addr, int val) {
-		set8bit(addr, (byte) ((val & 0xff00) >> 8));
-		set8bit(addr + 1, (byte) (val & 0xff));
+		set8bit(addr, (byte) (val & 0xff));
+		set8bit(addr + 1, (byte) ((val & 0xff00) >> 8));
 	}
 }

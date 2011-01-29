@@ -15,21 +15,36 @@ public class Cpu {
 	private long tStates = 0;
 
 	private Handler[] baseHandlers = new Handler[256];
+	private Handler[] extended_CB = new Handler[256];
+	private Handler[] extended_DD = new Handler[256];
+	private Handler[] extended_ED = new Handler[256];
+	private Handler[] extended_FD = new Handler[256];
+	private OutputDevice[] outputs = new OutputDevice[256];
+	private Handler[] current = baseHandlers;
 
 	public Cpu() {
 		Handler nullHandler = new NullHandler();
 
 		List<Handler> handlers = new ArrayList<Handler>();
-		handlers.add(new Handler_LD());
 		handlers.add(new Handler_ADD());
-		handlers.add(new Handler_SUB());
-		handlers.add(new Handler_NOP());
-		handlers.add(new Handler_INC());
 		handlers.add(new Handler_DEC());
-		handlers.add(new Handler_PUSH());
-		handlers.add(new Handler_POP());
-		handlers.add(new Handler_SCF_CCF());
+		handlers.add(new Handler_DI());
+		handlers.add(new Handler_INC());
+		handlers.add(new Handler_INC_DEC_RR());
+		handlers.add(new Handler_JP());
+		handlers.add(new Handler_LD());
 		handlers.add(new Handler_LD_N());
+		handlers.add(new Handler_LD_RR());
+		handlers.add(new Handler_NOP());
+		handlers.add(new Handler_OUT());
+		handlers.add(new Handler_POP());
+		handlers.add(new Handler_PUSH());
+		handlers.add(new Handler_RST());
+		handlers.add(new Handler_SCF_CCF());
+		handlers.add(new Handler_SUB());
+		handlers.add(new Handler_XOR());
+
+		handlers.add(new ShiftHandler());
 
 		for (int i = 0; i < 256; i++) {
 			for (Handler handler : handlers) {
@@ -42,6 +57,23 @@ public class Cpu {
 			}
 			if (baseHandlers[i] == null) {
 				baseHandlers[i] = nullHandler;
+			}
+		}
+		
+		handlers.clear();
+		handlers.add(new Handler_ED_LD_I_A());
+		
+		for (int i = 0; i < 256; i++) {
+			for (Handler handler : handlers) {
+				if (handler.willHandle(i)) {
+					if (extended_ED[i] != null) {
+						System.out.println("Warning: duplicate ED handler: " + i);
+					}
+					extended_ED[i] = handler;
+				}
+			}
+			if (extended_ED[i] == null) {
+				extended_ED[i] = nullHandler;
 			}
 		}
 	}
@@ -72,8 +104,13 @@ public class Cpu {
 		return val;
 	}
 
+	private int readNextWord() {
+		int val = memory.get16bit(registers.reg[_PC]);
+		registers.reg[_PC] = (registers.reg[_PC] + 2) & 0xffff;
+		return val;
+	}
+
 	public void execute() {
-		Handler[] current = baseHandlers;
 		int instr = readNextByte();
 		current[instr].handle(instr);
 	}
@@ -98,13 +135,13 @@ public class Cpu {
 		public void handle(int instr) {
 			int flags = registers.reg[_F];
 			switch (instr) {
-			case 0x37:  // SCF
+			case 0x37: // SCF
 				flags = adjustFlag(flags, F_H, false);
 				flags = adjustFlag(flags, F_C, true);
 				break;
-			case 0x3f:  // CCF
-				flags = adjustFlag(flags, F_H, (flags & (1<<F_C)) != 0);
-				flags = adjustFlag(flags, F_C, (flags & (1<<F_C)) == 0);
+			case 0x3f: // CCF
+				flags = adjustFlag(flags, F_H, (flags & (1 << F_C)) != 0);
+				flags = adjustFlag(flags, F_C, (flags & (1 << F_C)) == 0);
 				break;
 			}
 			flags = adjustFlag(flags, F_N, false);
@@ -247,14 +284,13 @@ public class Cpu {
 			int flags = registers.reg[_F];
 			flags = adjustFlag(flags, F_S, (registers.reg[_A] & 0x80) == 0x80);
 			flags = adjustFlag(flags, F_Z, registers.reg[_A] == 0);
-			flags = adjustFlag(flags, F_H,
-					((before & 0x0f) - (src & 0x0f)) < 0);
+			flags = adjustFlag(flags, F_H, ((before & 0x0f) - (src & 0x0f)) < 0);
 			flags = adjustFlag(flags, F_PV, (before & 0x80) != (src & 0x80)
 					&& (before & 0x80) != (after & 0x80));
 			flags = adjustFlag(flags, F_N, true);
 			flags = adjustFlag(flags, F_C, (after & ~0xff) != 0);
 			registers.reg[_F] = flags;
-			
+
 			tStates += 4;
 		}
 
@@ -291,7 +327,7 @@ public class Cpu {
 				res = memory.get8bit(registers.getHL());
 				tStates += 11;
 			} else {
-				registers.reg[reg]++;
+				registers.reg[reg] = (registers.reg[reg] + 1) & 0xff;
 				res = registers.reg[reg];
 				tStates += 4;
 			}
@@ -313,20 +349,200 @@ public class Cpu {
 	class Handler_DEC implements Handler {
 		public void handle(int instr) {
 			int reg = (instr & 0x38) >> 3;
+			int res;
 			if (reg == 6) {
 				memory.set8bit(registers.getHL(),
 						memory.get8bit(registers.getHL()) - 1);
+				res = memory.get8bit(registers.getHL());
 				tStates += 11;
 			} else {
-				registers.reg[reg]--;
+				registers.reg[reg] = (registers.reg[reg] - 1) & 0xff;
+				res = registers.reg[reg];
 				tStates += 4;
 			}
+
+			int flags = registers.reg[_F];
+			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
+			flags = adjustFlag(flags, F_Z, res == 0);
+			flags = adjustFlag(flags, F_H, (res & 0x0f) == 0x0f);
+			flags = adjustFlag(flags, F_PV, res == 0x7f);
+			flags = adjustFlag(flags, F_N, true);
+			registers.reg[_F] = flags;
 		}
 
 		public boolean willHandle(int instr) {
 			return (instr & 0xc7) == 0x05;
 		}
 	}
+
+	class Handler_XOR implements Handler {
+		public void handle(int instr) {
+			int arg;
+			if (instr == 0xEE) {
+				arg = readNextByte();
+				tStates += 3;
+			} else {
+				arg = getRegisterValue(instr & 0x07);
+			}
+
+			registers.reg[_A] = registers.reg[_A] ^ arg;
+			int res = registers.reg[_A];
+
+			int flags = registers.reg[_F];
+			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
+			flags = adjustFlag(flags, F_Z, res == 0);
+			flags = adjustFlag(flags, F_H, false);
+			flags = adjustFlag(flags, F_PV, Integer.bitCount(res) % 2 == 0);
+			flags = adjustFlag(flags, F_N, false);
+			flags = adjustFlag(flags, F_C, false);
+			registers.reg[_F] = flags;
+
+			tStates += 4;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xf8) == 0xa8 || instr == 0xEE;
+		}
+	}
+
+	class Handler_RST implements Handler {
+		public void handle(int instr) {
+			registers.reg[_SP] = (registers.reg[_SP] - 2) & 0xffff;
+			memory.set16bit(registers.reg[_SP], registers.reg[_PC]);
+			registers.reg[_PC] = (instr & 0x38);
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xC7) == 0xC7;
+		}
+	}
+
+	class Handler_LD_RR implements Handler {
+		public void handle(int instr) {
+			int val = readNextWord();
+			switch ((instr & 0x30) >> 4) {
+			case 0:
+				registers.setBC(val);
+				break;
+			case 1:
+				registers.setDE(val);
+				break;
+			case 2:
+				registers.setHL(val);
+				break;
+			case 3:
+				registers.reg[_SP] = val;
+				break;
+			}
+			tStates += 10;
+		}
+
+		public boolean willHandle(int instr) {
+			return ((instr & 0xCF) == 0x01);
+		}
+	}
+
+	class Handler_DI implements Handler {
+		public void handle(int instr) {
+			registers.iff1 = registers.iff2 = false;
+			tStates += 4;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0xf3;
+		}
+	}
+
+	class Handler_JP implements Handler {
+		public void handle(int instr) {
+			registers.reg[_PC] = readNextWord();
+			tStates += 10;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0xc3;
+		}
+	}
+
+	class Handler_INC_DEC_RR implements Handler {
+		public void handle(int instr) {
+			int adj = (instr & 0x08) == 0 ? 1 : -1;
+			switch((instr & 0x30) >> 4) {
+			case 0:
+				registers.setBC(registers.getBC() + adj);
+				break;
+			case 1:
+				registers.setDE(registers.getDE() + adj);
+				break;
+			case 2:
+				registers.setHL(registers.getHL() + adj);
+				break;
+			case 3:
+				registers.reg[_SP] = (registers.reg[_SP] + adj) & 0xff;
+				break;
+			}
+			
+			// 16 bit inc/dec does not affect flags
+			tStates += 6;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xc7) == 0x03;
+		}
+	}
+
+	class Handler_OUT implements Handler {
+		public void handle(int instr) {
+			int addr = readNextByte();
+			if(outputs[addr] != null) {
+				outputs[addr].event(registers.reg[_A]);
+			}
+			tStates += 11;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0xd3;
+		}
+	}
+
+	class ShiftHandler implements Handler {
+		public void handle(int instr) {
+			switch(instr) {
+			case 0xCB:
+				current = extended_CB;
+				break;
+			case 0xDD:
+				current = extended_DD;
+				break;
+			case 0xED:
+				current = extended_ED;
+				break;
+			case 0xFD:
+				current = extended_FD;
+				break;
+			}
+			execute();
+			current = baseHandlers;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0xED || instr == 0xFD || instr == 0xDD || instr == 0xCB;
+		}
+	}
+	
+	// ================ 0xED.. =====================
+	
+	class Handler_ED_LD_I_A implements Handler {
+		public void handle(int instr) {
+			registers.reg[_I] = registers.reg[_A];
+			tStates += 9;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0x47;
+		}
+	}
+
 
 	private int getRegisterValue(int instr) {
 		int src = instr & 0x07;
