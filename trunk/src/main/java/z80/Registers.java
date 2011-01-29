@@ -37,6 +37,20 @@ public class Registers {
 	static int _SP = 18;
 	static int _PC = 19;
 	
+	public void exx() {
+		int v = getBC();
+		setBC(reg[_XBC]);
+		reg[_XBC] = v;
+		
+		v = getDE();
+		setDE(reg[_XDE]);
+		reg[_XDE] = v;
+		
+		v = getHL();
+		setHL(reg[_XHL]);
+		reg[_XHL] = v;
+	}
+	
 	public int getFlag(int flag) {
 		return (reg[_F] & (1<<flag))>>flag;
 	}

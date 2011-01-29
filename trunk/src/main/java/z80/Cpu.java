@@ -27,10 +27,12 @@ public class Cpu {
 
 		List<Handler> handlers = new ArrayList<Handler>();
 		handlers.add(new Handler_ADD());
+		handlers.add(new Handler_ADD_HL());
 		handlers.add(new Handler_AND());
 		handlers.add(new Handler_CP());
 		handlers.add(new Handler_DEC());
 		handlers.add(new Handler_DI());
+		handlers.add(new Handler_EXX());
 		handlers.add(new Handler_INC());
 		handlers.add(new Handler_INC_DEC_RR());
 		handlers.add(new Handler_JP());
@@ -65,6 +67,7 @@ public class Cpu {
 		
 		handlers.clear();
 		handlers.add(new Handler_ED_LD_I_A());
+		handlers.add(new Handler_SBC_HL());
 		
 		for (int i = 0; i < 256; i++) {
 			for (Handler handler : handlers) {
@@ -127,7 +130,7 @@ public class Cpu {
 	class NullHandler implements Handler {
 		public void handle(int instr) {
 			System.out.println("Unhandled: 0x" + Integer.toString(instr, 16));
-			throw new RuntimeException();
+			throw new RuntimeException("Unfinished CPU at " + tStates);
 		}
 
 		public boolean willHandle(int instr) {
@@ -239,6 +242,27 @@ public class Cpu {
 
 		public boolean willHandle(int instr) {
 			return ((instr & 0xc0) == 0x40) && instr != 0x76;
+		}
+	}
+
+	class Handler_ADD_HL implements Handler {
+		public void handle(int instr) {
+			int preHL = registers.getHL();
+			int arg = get16bitRegister((instr & 0x30) >> 4);
+			registers.setHL((preHL + arg) & 0xffff);
+			int res = registers.getHL();
+			
+			int flags = registers.reg[_F];
+			flags = adjustFlag(flags, F_H, ((preHL & 0x0fff) + (arg & 0x0fff)) > 0x0fff);
+			flags = adjustFlag(flags, F_N, false);
+			flags = adjustFlag(flags, F_C, (res & ~0xffff) != 0);
+			registers.reg[_F] = flags;
+
+			tStates += 11;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xCF) == 0x09;
 		}
 	}
 
@@ -537,6 +561,12 @@ public class Cpu {
 			case 0x28:
 				test = registers.isFlag(F_Z);
 				break;
+			case 0x30:
+				test = ! registers.isFlag(F_C);
+				break;
+			case 0x38:
+				test = registers.isFlag(F_C);
+				break;
 			}
 			
 			int dist = readNextByte();
@@ -553,7 +583,7 @@ public class Cpu {
 		}
 
 		public boolean willHandle(int instr) {
-			return (instr & 0xF7) == 0x20;
+			return (instr & 0xE7) == 0x20;
 		}
 	}
 
@@ -598,6 +628,17 @@ public class Cpu {
 		}
 	}
 
+	class Handler_EXX implements Handler {
+		public void handle(int instr) {
+			registers.exx();
+			tStates += 4;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0xd9;
+		}
+	}
+
 	class ShiftHandler implements Handler {
 		public void handle(int instr) {
 			switch(instr) {
@@ -636,6 +677,45 @@ public class Cpu {
 		}
 	}
 
+	class Handler_SBC_HL implements Handler {
+		public void handle(int instr) {
+			int preHL = registers.getHL();
+			int arg = get16bitRegister((instr & 0x30) >> 4);
+			arg += registers.getFlag(F_C);
+			registers.setHL((preHL - arg) & 0xffff);
+			int res = registers.getHL();
+			
+			int flags = registers.reg[_F];
+			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
+			flags = adjustFlag(flags, F_Z, res == 0);
+			flags = adjustFlag(flags, F_H, ((preHL & 0x0fff) < (arg & 0x0fff)));
+			flags = adjustFlag(flags, F_PV, (preHL & 0x80) != (arg & 0x8000)
+					&& (preHL & 0x8000) != (res & 0x8000));
+			flags = adjustFlag(flags, F_N, true);
+			flags = adjustFlag(flags, F_C, (res & ~0xffff) != 0);
+			registers.reg[_F] = flags;
+
+			tStates += 15;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xCF) == 0x42;
+		}
+	}
+	
+	private int get16bitRegister(int arg) {
+		switch(arg) {
+		case 0:
+			return registers.getBC();
+		case 1:
+			return registers.getDE();
+		case 2:
+			return registers.getHL();
+		case 3:
+			return registers.reg[_SP];
+		}
+		throw new RuntimeException("Invalid 16 bit register request: " + arg);
+	}
 
 	private int getRegisterValue(int instr) {
 		int src = instr & 0x07;
