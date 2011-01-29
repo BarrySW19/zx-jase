@@ -55,30 +55,30 @@ public class Registers {
 	}
 	
 	public int getBC() {
-		return reg[_C] << 8 | reg[_B];
+		return reg[_B] << 8 | reg[_C];
 	}
 	
 	public void setBC(int val) {
-		reg[_C] = (val & 0xff00) >> 8;
-		reg[_B] = (val & 0xff);
+		reg[_B] = (val & 0xff00) >> 8;
+		reg[_C] = (val & 0xff);
 	}
 	
 	public int getDE() {
-		return reg[_E] << 8 | reg[_D];
+		return reg[_D] << 8 | reg[_E];
 	}
 	
 	public void setDE(int val) {
-		reg[_E] = (val & 0xff00) >> 8;
-		reg[_D] = (val & 0xff);
+		reg[_D] = (val & 0xff00) >> 8;
+		reg[_E] = (val & 0xff);
 	}
 	
 	public int getHL() {
-		return reg[_L] << 8 | reg[_H];
+		return reg[_H] << 8 | reg[_L];
 	}
 	
 	public void setHL(int val) {
-		reg[_L] = (val & 0xff00) >> 8;
-		reg[_H] = (val & 0xff);
+		reg[_H] = (val & 0xff00) >> 8;
+		reg[_L] = (val & 0xff);
 	}
 	
 	public void incPC() {
