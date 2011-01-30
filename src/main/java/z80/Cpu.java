@@ -19,20 +19,21 @@ public class Cpu {
 	private Handler[] extended_DD = new Handler[256];
 	private Handler[] extended_ED = new Handler[256];
 	private Handler[] extended_FD = new Handler[256];
-	private OutputDevice[] outputs = new OutputDevice[256];
 	private Handler[] current = baseHandlers;
+	private OutputDevice[] outputs = new OutputDevice[256];
+	
+	private boolean enableInt = false;
 
 	public Cpu() {
-		Handler nullHandler = new NullHandler();
+		LoadableHandler nullHandler = new NullHandler();
 
-		List<Handler> handlers = new ArrayList<Handler>();
+		List<LoadableHandler> handlers = new ArrayList<LoadableHandler>();
 		handlers.add(new Handler_ADD());
 		handlers.add(new Handler_ADD_HL());
 		handlers.add(new Handler_AND());
 		handlers.add(new Handler_CP());
 		handlers.add(new Handler_DEC());
-		handlers.add(new Handler_DI());
-		handlers.add(new Handler_EXX());
+		handlers.add(new Handler_EX_DE_HL());
 		handlers.add(new Handler_INC());
 		handlers.add(new Handler_INC_DEC_RR());
 		handlers.add(new Handler_JP());
@@ -40,7 +41,7 @@ public class Cpu {
 		handlers.add(new Handler_LD());
 		handlers.add(new Handler_LD_N());
 		handlers.add(new Handler_LD_RR());
-		handlers.add(new Handler_NOP());
+		handlers.add(new Handler_LD_HL_NN());
 		handlers.add(new Handler_OUT());
 		handlers.add(new Handler_POP());
 		handlers.add(new Handler_PUSH());
@@ -51,8 +52,10 @@ public class Cpu {
 
 		handlers.add(new ShiftHandler());
 
+		loadSimpleHandlers();
+		
 		for (int i = 0; i < 256; i++) {
-			for (Handler handler : handlers) {
+			for (LoadableHandler handler : handlers) {
 				if (handler.willHandle(i)) {
 					if (baseHandlers[i] != null) {
 						System.out.println("Warning: duplicate handler: " + i);
@@ -60,17 +63,16 @@ public class Cpu {
 					baseHandlers[i] = handler;
 				}
 			}
-			if (baseHandlers[i] == null) {
-				baseHandlers[i] = nullHandler;
-			}
 		}
 		
 		handlers.clear();
 		handlers.add(new Handler_ED_LD_I_A());
 		handlers.add(new Handler_SBC_HL());
-		
+		handlers.add(new Handler_LD_NN_RR());
+		handlers.add(new Handler_LDDR());
+				
 		for (int i = 0; i < 256; i++) {
-			for (Handler handler : handlers) {
+			for (LoadableHandler handler : handlers) {
 				if (handler.willHandle(i)) {
 					if (extended_ED[i] != null) {
 						System.out.println("Warning: duplicate ED handler: " + i);
@@ -78,10 +80,75 @@ public class Cpu {
 					extended_ED[i] = handler;
 				}
 			}
-			if (extended_ED[i] == null) {
-				extended_ED[i] = nullHandler;
-			}
 		}
+		
+		for(int i = 0; i < 256; i++) {
+			baseHandlers[i] = (baseHandlers[i] == null ? nullHandler : baseHandlers[i]);
+			extended_CB[i] = (extended_CB[i] == null ? nullHandler : extended_CB[i]);
+			extended_DD[i] = (extended_DD[i] == null ? nullHandler : extended_DD[i]);
+			extended_ED[i] = (extended_ED[i] == null ? nullHandler : extended_ED[i]);
+			extended_FD[i] = (extended_FD[i] == null ? nullHandler : extended_FD[i]);
+		}
+	}
+	
+	private void loadSimpleHandlers() {
+		// EXX
+		baseHandlers[0xD9] = new Handler() {
+			public void handle(int instr) {
+				registers.exx();
+				tStates += 4;
+			}
+		};
+		// NOP
+		baseHandlers[0x00] = new Handler() {
+			public void handle(int instr) {
+				tStates += 4;
+			}
+		};
+		// LD (nn),HL
+		baseHandlers[0x22] = new Handler() {
+			public void handle(int instr) {
+				memory.set16bit(readNextWord(), registers.getHL());
+				tStates += 16;
+			}
+		};
+		// DI
+		baseHandlers[0xf3] = new Handler() {
+			public void handle(int instr) {
+				registers.iff1 = registers.iff2 = false;
+				tStates += 4;
+			}
+		};
+		// EI
+		baseHandlers[0xfb] = new Handler() {
+			public void handle(int instr) {
+				enableInt = true;
+				tStates += 4;
+			}
+		};
+		// LD SP,HL
+		baseHandlers[0xf9] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_SP] = registers.getHL();
+				tStates += 6;
+			}
+		};
+		
+		// IM 1
+		extended_ED[0x56] = new Handler() {
+			public void handle(int instr) {
+				registers.im = IntMode.IM1;
+				tStates += 8;
+			}
+		};
+
+		// LD IY,NN
+		extended_FD[0x21] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_IY] = readNextWord();
+				tStates += 14;
+			}
+		};
 	}
 
 	public long getTStates() {
@@ -118,16 +185,15 @@ public class Cpu {
 
 	public void execute() {
 		int instr = readNextByte();
+		System.out.println("i " + Integer.toHexString(instr));
 		current[instr].handle(instr);
+		if(enableInt) {
+			enableInt = false;
+			registers.iff1 = registers.iff2 = true;
+		}
 	}
 
-	interface Handler {
-		boolean willHandle(int instr);
-
-		void handle(int instr);
-	}
-
-	class NullHandler implements Handler {
+	class NullHandler implements LoadableHandler {
 		public void handle(int instr) {
 			System.out.println("Unhandled: 0x" + Integer.toString(instr, 16));
 			throw new RuntimeException("Unfinished CPU at " + tStates);
@@ -138,7 +204,18 @@ public class Cpu {
 		}
 	}
 
-	class Handler_SCF_CCF implements Handler {
+	class Handler_LD_HL_NN implements LoadableHandler {
+		public void handle(int instr) {
+			registers.setHL(memory.get16bit(readNextWord()));
+			tStates += 16;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0x2a;
+		}
+	}
+
+	class Handler_SCF_CCF implements LoadableHandler {
 		public void handle(int instr) {
 			int flags = registers.reg[_F];
 			switch (instr) {
@@ -161,7 +238,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_POP implements Handler {
+	class Handler_POP implements LoadableHandler {
 
 		public boolean willHandle(int instr) {
 			return (instr & 0xCF) == 0xC1;
@@ -188,7 +265,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_PUSH implements Handler {
+	class Handler_PUSH implements LoadableHandler {
 
 		public boolean willHandle(int instr) {
 			return (instr & 0xCF) == 0xC5;
@@ -216,17 +293,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_NOP implements Handler {
-		public void handle(int instr) {
-			tStates += 4;
-		}
-
-		public boolean willHandle(int instr) {
-			return instr == 0;
-		}
-	}
-
-	class Handler_LD implements Handler {
+	class Handler_LD implements LoadableHandler {
 		public void handle(int instr) {
 			int src = getRegisterValue(instr);
 
@@ -245,7 +312,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_ADD_HL implements Handler {
+	class Handler_ADD_HL implements LoadableHandler {
 		public void handle(int instr) {
 			int preHL = registers.getHL();
 			int arg = get16bitRegister((instr & 0x30) >> 4);
@@ -266,7 +333,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_ADD implements Handler {
+	class Handler_ADD implements LoadableHandler {
 		public void handle(int instr) {
 			int src = getRegisterValue(instr);
 
@@ -297,7 +364,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_SUB implements Handler {
+	class Handler_SUB implements LoadableHandler {
 		public void handle(int instr) {
 			int src = getRegisterValue(instr);
 
@@ -327,7 +394,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_LD_N implements Handler {
+	class Handler_LD_N implements LoadableHandler {
 		public void handle(int instr) {
 			int val = readNextByte();
 			int reg = (instr & 0x38) >> 3;
@@ -345,7 +412,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_INC implements Handler {
+	class Handler_INC implements LoadableHandler {
 		public void handle(int instr) {
 			int reg = (instr & 0x38) >> 3;
 			int res;
@@ -374,7 +441,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_DEC implements Handler {
+	class Handler_DEC implements LoadableHandler {
 		public void handle(int instr) {
 			int reg = (instr & 0x38) >> 3;
 			int res;
@@ -403,7 +470,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_XOR implements Handler {
+	class Handler_XOR implements LoadableHandler {
 		public void handle(int instr) {
 			int arg;
 			if (instr == 0xEE) {
@@ -433,7 +500,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_AND implements Handler {
+	class Handler_AND implements LoadableHandler {
 		public void handle(int instr) {
 			int arg;
 			if (instr == 0xE6) {
@@ -463,7 +530,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_CP implements Handler {
+	class Handler_CP implements LoadableHandler {
 		public void handle(int instr) {
 			int arg;
 			if (instr == 0xFE) {
@@ -492,7 +559,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_RST implements Handler {
+	class Handler_RST implements LoadableHandler {
 		public void handle(int instr) {
 			registers.reg[_SP] = (registers.reg[_SP] - 2) & 0xffff;
 			memory.set16bit(registers.reg[_SP], registers.reg[_PC]);
@@ -504,7 +571,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_LD_RR implements Handler {
+	class Handler_LD_RR implements LoadableHandler {
 		public void handle(int instr) {
 			int val = readNextWord();
 			switch ((instr & 0x30) >> 4) {
@@ -529,18 +596,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_DI implements Handler {
-		public void handle(int instr) {
-			registers.iff1 = registers.iff2 = false;
-			tStates += 4;
-		}
-
-		public boolean willHandle(int instr) {
-			return instr == 0xf3;
-		}
-	}
-
-	class Handler_JP implements Handler {
+	class Handler_JP implements LoadableHandler {
 		public void handle(int instr) {
 			registers.reg[_PC] = readNextWord();
 			tStates += 10;
@@ -551,7 +607,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_JR implements Handler {
+	class Handler_JR implements LoadableHandler {
 		public void handle(int instr) {
 			boolean test = false;
 			switch(instr) {
@@ -587,7 +643,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_INC_DEC_RR implements Handler {
+	class Handler_INC_DEC_RR implements LoadableHandler {
 		public void handle(int instr) {
 			int adj = (instr & 0x08) == 0 ? 1 : -1;
 			switch((instr & 0x30) >> 4) {
@@ -614,7 +670,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_OUT implements Handler {
+	class Handler_OUT implements LoadableHandler {
 		public void handle(int instr) {
 			int addr = readNextByte();
 			if(outputs[addr] != null) {
@@ -628,18 +684,7 @@ public class Cpu {
 		}
 	}
 
-	class Handler_EXX implements Handler {
-		public void handle(int instr) {
-			registers.exx();
-			tStates += 4;
-		}
-
-		public boolean willHandle(int instr) {
-			return instr == 0xd9;
-		}
-	}
-
-	class ShiftHandler implements Handler {
+	class ShiftHandler implements LoadableHandler {
 		public void handle(int instr) {
 			switch(instr) {
 			case 0xCB:
@@ -664,9 +709,22 @@ public class Cpu {
 		}
 	}
 	
+	class Handler_EX_DE_HL implements LoadableHandler {
+		public void handle(int instr) {
+			int val = registers.getHL();
+			registers.setHL(registers.getDE());
+			registers.setDE(val);
+			tStates += 4;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0xEB;
+		}
+	}
+
 	// ================ 0xED.. =====================
 	
-	class Handler_ED_LD_I_A implements Handler {
+	class Handler_ED_LD_I_A implements LoadableHandler {
 		public void handle(int instr) {
 			registers.reg[_I] = registers.reg[_A];
 			tStates += 9;
@@ -677,7 +735,40 @@ public class Cpu {
 		}
 	}
 
-	class Handler_SBC_HL implements Handler {
+	class Handler_LD_NN_RR implements LoadableHandler {
+		public void handle(int instr) {
+			int arg = readNextWord();
+			int val = get16bitRegister((instr & 0x30) >> 4);
+			memory.set16bit(arg, val);
+			tStates += 20;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xCF) == 0x43 && instr != 0x63;
+		}
+	}
+
+	class Handler_LDDR implements LoadableHandler {
+		public void handle(int instr) {
+			while(true) {
+				memory.set8bit(registers.getDE(), memory.get8bit(registers.getHL()));
+				registers.setHL(registers.getHL() - 1);
+				registers.setDE(registers.getDE() - 1);
+				registers.setBC(registers.getBC() - 1);
+				if(registers.getBC() == 0) {
+					break;
+				}
+				tStates += 21;
+			}
+			tStates += 16;
+		}
+
+		public boolean willHandle(int instr) {
+			return instr == 0xB8;
+		}
+	}
+
+	class Handler_SBC_HL implements LoadableHandler {
 		public void handle(int instr) {
 			int preHL = registers.getHL();
 			int arg = get16bitRegister((instr & 0x30) >> 4);
@@ -733,5 +824,13 @@ public class Cpu {
 		} else {
 			return flags &= ~(1 << bit);
 		}
+	}
+
+	interface Handler {
+		void handle(int instr);
+	}
+	
+	interface LoadableHandler extends Handler {
+		boolean willHandle(int instr);
 	}
 }
