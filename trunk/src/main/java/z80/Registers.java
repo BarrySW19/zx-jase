@@ -2,8 +2,11 @@ package z80;
 
 public class Registers {
 	
+	static enum IntMode { IM0, IM1, IM2 };
+	
 	int[] reg = new int[20];
 	boolean iff1, iff2;
+	IntMode im = IntMode.IM0;
 	
 	static int F_S = 7;
 	static int F_Z = 6;
