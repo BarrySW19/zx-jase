@@ -92,13 +92,6 @@ public class Cpu {
 	}
 	
 	private void loadSimpleHandlers() {
-		// EXX
-		baseHandlers[0xD9] = new Handler() {
-			public void handle(int instr) {
-				registers.exx();
-				tStates += 4;
-			}
-		};
 		// NOP
 		baseHandlers[0x00] = new Handler() {
 			public void handle(int instr) {
@@ -110,6 +103,20 @@ public class Cpu {
 			public void handle(int instr) {
 				memory.set16bit(readNextWord(), registers.getHL());
 				tStates += 16;
+			}
+		};
+		// LD (nn),HL
+		baseHandlers[0x32] = new Handler() {
+			public void handle(int instr) {
+				memory.set8bit(readNextWord(), registers.reg[_A]);
+				tStates += 13;
+			}
+		};
+		// EXX
+		baseHandlers[0xD9] = new Handler() {
+			public void handle(int instr) {
+				registers.exx();
+				tStates += 4;
 			}
 		};
 		// DI
@@ -750,10 +757,11 @@ public class Cpu {
 
 	class Handler_LDDR implements LoadableHandler {
 		public void handle(int instr) {
+			int dir = (instr & 0x08) == 0 ? 1 : -1;
 			while(true) {
 				memory.set8bit(registers.getDE(), memory.get8bit(registers.getHL()));
-				registers.setHL(registers.getHL() - 1);
-				registers.setDE(registers.getDE() - 1);
+				registers.setHL(registers.getHL() + dir);
+				registers.setDE(registers.getDE() + dir);
 				registers.setBC(registers.getBC() - 1);
 				if(registers.getBC() == 0) {
 					break;
@@ -764,7 +772,7 @@ public class Cpu {
 		}
 
 		public boolean willHandle(int instr) {
-			return instr == 0xB8;
+			return instr == 0xB8 || instr == 0xB0;
 		}
 	}
 
