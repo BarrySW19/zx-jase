@@ -37,7 +37,7 @@ public class Registers {
 	static int _XHL = 16;
 	
 	static int _S = 17;
-	static int _SP = 18;
+	private static int _SP = 18;
 	static int _PC = 19;
 	
 	public void exx() {
@@ -96,6 +96,14 @@ public class Registers {
 	public void setHL(int val) {
 		reg[_H] = (val & 0xff00) >> 8;
 		reg[_L] = (val & 0xff);
+	}
+	
+	public void setSP(int val) {
+		reg[_SP] = (val & 0xffff);
+	}
+	
+	public int getSP() {
+		return reg[_SP];
 	}
 	
 	public void incPC() {
