@@ -1,4 +1,38 @@
-fix INC:
 {{{
-registers.reg[reg] = (registers.reg[reg] + 1) & 0xff;
+		// ADD A,(IY+d)
+		extended_FD[0x86] = new Handler() {
+			public void handle(int instr) {
+				int addr = registers.reg[_IY] + readNextByte();
+				int before = memory.get8bit(addr);
+				int after = before + registers.reg[_A];
+				registers.reg[_A] = (after & 0xff);
+				set8bitAddFlags(before, after);
+				tStates += 19;
+			}
+		};
+
+	class Handler_LD_IY_R implements LoadableHandler {
+		public void handle(int instr) {
+			int addr = registers.reg[_IY] + readNextByte();
+			memory.set8bit(addr, registers.reg[instr&0x07]);
+			tStates += 19;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xF8) == 0x70 && instr != 0x76;
+		}
+	}
+	
+	class Handler_LD_R_IY implements LoadableHandler {
+		public void handle(int instr) {
+			int addr = registers.reg[_IY] + readNextByte();
+			registers.reg[(instr&0x38)>>3] = memory.get8bit(addr);
+			tStates += 19;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xC7) == 0x46 && instr != 0x76;
+		}
+	}
+
 }}}
