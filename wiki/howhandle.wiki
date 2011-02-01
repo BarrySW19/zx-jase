@@ -1,54 +1,10 @@
 {{{
-return get8bit(addr) | (get8bit(addr+1) << 8);
-set8bit(addr, (val & 0xff));
-set8bit(addr+1, ((val & 0xff00) >> 8));
-
-
-	class Handler_LD_RR implements Handler {
-		public void handle(int instr) {
-			int val = readNextWord();
-			switch((instr & 0x30)>>4) {
-			case 0:
-				registers.setBC(val);
-				break;
-			case 1:
-				registers.setDE(val);
-				break;
-			case 2:
-				registers.setHL(val);
-				break;
-			case 3:
-				registers.reg[_SP] = val;
-				break;
+fix t-states issue
+		// JP (HL)
+		baseHandlers[0xE9] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_PC] = registers.getHL();
+				tStates += 4;
 			}
-			tStates += 10;
-		}
-
-		public boolean willHandle(int instr) {
-			return ((instr & 0xCF) == 0x01);
-		}
-	}
-	
-	class Handler_DI implements Handler {
-		public void handle(int instr) {
-			registers.iff1 = registers.iff2 = false;
-			tStates += 4;
-		}
-
-		public boolean willHandle(int instr) {
-			return instr == 0xf3;
-		}
-	}
-
-
-	class Handler_JP implements Handler {
-		public void handle(int instr) {
-			registers.reg[_PC] = readNextWord();
-			tStates += 10;
-		}
-
-		public boolean willHandle(int instr) {
-			return instr == 0xc3;
-		}
-	}
+		};
 }}}
