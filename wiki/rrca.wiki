@@ -1,0 +1,15 @@
+{{{
+		// RRCA
+		baseHandlers[0x0F] = new Handler() {
+			public void handle(int instr) {
+				int bit0 = registers.reg[_A] & 0x01;
+				registers.reg[_A] = (registers.reg[_A]>>1) | (bit0<<7);
+				int flags = registers.reg[_F];
+				flags = adjustFlag(flags, F_H, false);
+				flags = adjustFlag(flags, F_N, false);
+				flags = adjustFlag(flags, F_C, (bit0 == 0x01));
+				registers.reg[_F] = flags;
+				tStates += 4;
+			}
+		};
+}}}
