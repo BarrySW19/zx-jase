@@ -1,72 +1,15 @@
 {{{
-	class Handler_DEC implements Handler {
+	class Handler_JR implements LoadableHandler {
 		public void handle(int instr) {
-			int reg = (instr & 0x38) >> 3;
-			int res;
-			if (reg == 6) {
-				memory.set8bit(registers.getHL(),
-						memory.get8bit(registers.getHL()) - 1);
-				res = memory.get8bit(registers.getHL());
-				tStates += 11;
-			} else {
-				registers.reg[reg] = (registers.reg[reg] - 1) & 0xff;
-				res = registers.reg[reg];
-				tStates += 4;
-			}
-
-			int flags = registers.reg[_F];
-			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
-			flags = adjustFlag(flags, F_Z, res == 0);
-			flags = adjustFlag(flags, F_H, (res & 0x0f) == 0x0f);
-			flags = adjustFlag(flags, F_PV, res == 0x7f);
-			flags = adjustFlag(flags, F_N, true);
-			registers.reg[_F] = flags;
-		}
+			boolean test = false;
+			switch(instr) {
+			case 0x18:
+				test = true;
+...
+				break;
 
 		public boolean willHandle(int instr) {
-			return (instr & 0xc7) == 0x05;
-		}
-	}
-	
-	class Handler_XOR implements Handler {
-		public void handle(int instr) {
-			int arg;
-			if(instr == 0xEE) {
-				arg = readNextByte();
-				tStates += 3;
-			} else {
-				arg = getRegisterValue(instr & 0x07);
-			}
-			
-			registers.reg[_A] = registers.reg[_A] ^ arg;
-			int res = registers.reg[_A];
-
-			int flags = registers.reg[_F];
-			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
-			flags = adjustFlag(flags, F_Z, res == 0);
-			flags = adjustFlag(flags, F_H, false);
-			flags = adjustFlag(flags, F_PV, Integer.bitCount(res) % 2 == 0);
-			flags = adjustFlag(flags, F_N, false);
-			flags = adjustFlag(flags, F_C, false);
-			registers.reg[_F] = flags;
-			
-			tStates += 4;
-		}
-
-		public boolean willHandle(int instr) {
-			return (instr & 0xf8) == 0xa8 || instr == 0xEE;
-		}
-	}
-	
-	class Handler_RST implements Handler {
-		public void handle(int instr) {
-			registers.reg[_SP] = (registers.reg[_SP] - 2) & 0xffff;
-			memory.set16bit(registers.reg[_SP], registers.reg[_PC]);
-			registers.reg[_PC] = (instr & 0x38);
-		}
-
-		public boolean willHandle(int instr) {
-			return (instr & 0xC7) == 0xC7;
+			return (instr & 0xE7) == 0x20 || instr == 0x18;
 		}
 	}
 }}}
