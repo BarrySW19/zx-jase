@@ -20,11 +20,11 @@ public class CpuTests {
 
 	@Test
 	public void test_PUSH_POP() {
-		cpu.getRegisters().reg[_SP] = 0x8000;
+		cpu.getRegisters().setSP(0x8000);
 		cpu.getRegisters().setDE(0x1776);
 		execute(0xd5);
 		assertEquals(0x1776, cpu.getMemory().get16bit(0x7FFE));
-		assertEquals(0x7FFE, cpu.getRegisters().reg[_SP]);
+		assertEquals(0x7FFE, cpu.getRegisters().getSP());
 		assertEquals(11L, cpu.getTStates());
 
 		cpu.getRegisters().setDE(0x0000);
@@ -32,7 +32,7 @@ public class CpuTests {
 
 		execute(0xd1);
 		assertEquals(0x1776, cpu.getRegisters().getDE());
-		assertEquals(0x8000, cpu.getRegisters().reg[_SP]);
+		assertEquals(0x8000, cpu.getRegisters().getSP());
 		assertEquals(21L, cpu.getTStates());
 	}
 
