@@ -79,7 +79,8 @@ public class Cpu {
 				new Handler_LDDR());
 		
 		initialiseHandlers(extended_FD,
-				new Handler_LD_IY_R());
+				new Handler_LD_IY_R(),
+				new Handler_LD_R_IY());
 				
 		Handler nullHandler = new NullHandler();
 		for(int i = 0; i < 256; i++) {
@@ -95,6 +96,17 @@ public class Cpu {
 		// NOP
 		baseHandlers[0x00] = new Handler() {
 			public void handle(int instr) {
+				tStates += 4;
+			}
+		};
+		// RRCA
+		baseHandlers[0x0F] = new Handler() {
+			public void handle(int instr) {
+				int bit0 = registers.reg[_A] & 0x01;
+				registers.reg[_A] = (registers.reg[_A]>>1) | (bit0<<7);
+				adjustFlag(F_H, false);
+				adjustFlag(F_N, false);
+				adjustFlag(F_C, bit0 == 0x01);
 				tStates += 4;
 			}
 		};
@@ -125,6 +137,13 @@ public class Cpu {
 				tStates += 13;
 			}
 		};
+		// LD A,(nn)
+		baseHandlers[0x3A] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_A] = memory.get8bit(readNextWord());
+				tStates += 13;
+			}
+		};
 		// EXX
 		baseHandlers[0xD9] = new Handler() {
 			public void handle(int instr) {
@@ -135,8 +154,7 @@ public class Cpu {
 		// JP (HL)
 		baseHandlers[0xE9] = new Handler() {
 			public void handle(int instr) {
-				registers.reg[_PC] = memory.get16bit(registers.getHL());
-				registers.exx();
+				registers.reg[_PC] = registers.getHL();
 				tStates += 4;
 			}
 		};
@@ -221,6 +239,17 @@ public class Cpu {
 				tStates += 19;
 			}
 		};
+		// ADD A,(IY+d)
+		extended_FD[0x86] = new Handler() {
+			public void handle(int instr) {
+				int addr = registers.reg[_IY] + readNextByte();
+				int before = memory.get8bit(addr);
+				int after = before + registers.reg[_A];
+				registers.reg[_A] = (after & 0xff);
+				set8bitAddFlags(before, after);
+				tStates += 19;
+			}
+		};
 		extended_FD[0xCB] = new Handler() {
 			public void handle(int instr) {
 				int addr = registers.reg[_IY] + readNextByte();
@@ -257,6 +286,7 @@ public class Cpu {
 			registers.reg[_F] = flags;
 			tStates += 20;
 		} else if((instr & 0xC7) == 0x86) {
+			// RES
 			int bit = (instr & 0x38) >> 3;
 			memory.set8bit(addr, memory.get8bit(addr) & ~(1<<bit));
 			tStates += 15;
@@ -478,7 +508,7 @@ public class Cpu {
 				registers.reg[_PC] = pop();
 				tStates += 11;
 			} else {
-				tStates = 5;
+				tStates += 5;
 			}
 		}
 
@@ -511,7 +541,12 @@ public class Cpu {
 
 	class Handler_SUB implements LoadableHandler {
 		public void handle(int instr) {
-			int src = getRegisterValue(instr);
+			int src;
+			if(instr == 0xd6) {
+				src = readNextByte();
+			} else {
+				src = getRegisterValue(instr);
+			}
 
 			if ((instr & 0x08) == 0x08) {
 				src += registers.getFlag(F_C);
@@ -535,7 +570,7 @@ public class Cpu {
 		}
 
 		public boolean willHandle(int instr) {
-			return (instr & 0xf0) == 0x90;
+			return (instr & 0xf0) == 0x90 || instr == 0xd6;
 		}
 	}
 
@@ -779,6 +814,9 @@ public class Cpu {
 		public void handle(int instr) {
 			boolean test = false;
 			switch(instr) {
+			case 0x18:
+				test = true;
+				break;
 			case 0x20:
 				test = ! registers.isFlag(F_Z);
 				break;
@@ -807,7 +845,7 @@ public class Cpu {
 		}
 
 		public boolean willHandle(int instr) {
-			return (instr & 0xE7) == 0x20;
+			return (instr & 0xE7) == 0x20 || instr == 0x18;
 		}
 	}
 
@@ -924,7 +962,19 @@ public class Cpu {
 		}
 
 		public boolean willHandle(int instr) {
-			return (instr & 0xF8) == 0x70;
+			return (instr & 0xF8) == 0x70 && instr != 0x76;
+		}
+	}
+	
+	class Handler_LD_R_IY implements LoadableHandler {
+		public void handle(int instr) {
+			int addr = registers.reg[_IY] + readNextByte();
+			registers.reg[(instr&0x38)>>3] = memory.get8bit(addr);
+			tStates += 19;
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xC7) == 0x46 && instr != 0x76;
 		}
 	}
 
@@ -1009,11 +1059,20 @@ public class Cpu {
 		}
 	}
 
+	@Deprecated
 	private int adjustFlag(int flags, int bit, boolean val) {
 		if (val) {
 			return flags | (1 << bit);
 		} else {
 			return flags &= ~(1 << bit);
+		}
+	}
+	
+	private void adjustFlag(int bit, boolean val) {
+		if (val) {
+			registers.reg[_F] |= (1 << bit);
+		} else {
+			registers.reg[_F] &= ~(1 << bit);
 		}
 	}
 	
