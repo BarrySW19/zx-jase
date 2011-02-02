@@ -1,18 +1,2 @@
 {{{
-		// EX AF,AF'
-		baseHandlers[0x08] = new Handler() {
-			public void handle(int instr) {
-				int tmp = registers.getAF();
-				registers.setAF(registers.reg[_XAF]);
-				registers.reg[_XAF] = tmp;
-				tStates += 4;
-			}
-		};
-		// LD (DE),A
-		baseHandlers[0x12] = new Handler() {
-			public void handle(int instr) {
-				memory.set8bit(registers.getDE(), registers.reg[_A]);
-				tStates += 7;
-			}
-		};
 }}}
