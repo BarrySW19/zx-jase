@@ -909,8 +909,6 @@ public class Cpu {
 			if (test) {
 				if (dist >= 128) {
 					dist = -(256 - dist);
-					System.out.println("" + registers.reg[_A] + " "
-							+ registers.getHL());
 				}
 				registers.reg[_PC] = (registers.reg[_PC] + dist) & 0xffff;
 				tStates += 5;
@@ -1155,15 +1153,15 @@ public class Cpu {
 	private void push(int val) {
 		registers.setSP(registers.getSP() - 2);
 		memory.set16bit(registers.getSP(), val);
-		System.out.println("PUSH: "
-				+ Integer.toHexString(memory.get16bit(registers.getSP()))
-				+ " @ " + Integer.toHexString(registers.getSP()));
+//		System.out.println("PUSH: "
+//				+ Integer.toHexString(memory.get16bit(registers.getSP()))
+//				+ " @ " + Integer.toHexString(registers.getSP()));
 	}
 
 	private int pop() {
 		int val = memory.get16bit(registers.getSP());
 		registers.setSP(registers.getSP() + 2);
-		System.out.println("POP: " + Integer.toHexString(val));
+//		System.out.println("POP: " + Integer.toHexString(val));
 		return val;
 	}
 	

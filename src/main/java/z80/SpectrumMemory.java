@@ -5,6 +5,8 @@ import java.io.InputStream;
 
 public class SpectrumMemory extends Memory {
 	
+	private ScreenBufListener listener;
+	
 	public SpectrumMemory() {
 		InputStream is = ClassLoader.getSystemResourceAsStream("original.rom");
 		int i;
@@ -23,5 +25,18 @@ public class SpectrumMemory extends Memory {
 		if((addr & ~0x3fff) != 0) {
 			super.set8bit(addr, val);
 		}
+		if(addr >= 0x4000 && addr < 0x5B00) {
+			System.out.println("SCR: 0x" + Integer.toHexString(addr)
+					+ " 0x" + Integer.toHexString(val));
+			listener.update(addr, val);
+		}
+	}
+	
+	public void setListener(ScreenBufListener l) {
+		this.listener = l;
+	}
+	
+	interface ScreenBufListener {
+		public void update(int addr, int val);
 	}
 }
