@@ -1,45 +1,15 @@
 {{{
-	class Handler_JP implements LoadableHandler {
-		public void handle(int instr) {
-			boolean test = false;
-			switch(instr) {
-			case 0xc3:
-				test = true;
-				break;
-			case 0xc2:
-				test = ! registers.isFlag(F_Z);
-				break;
-			case 0xca:
-				test = registers.isFlag(F_Z);
-				break;
-			case 0xd2:
-				test = ! registers.isFlag(F_C);
-				break;
-			case 0xda:
-				test = registers.isFlag(F_C);
-				break;
-			case 0xe2:
-				test = ! registers.isFlag(F_PV);
-				break;
-			case 0xea:
-				test = registers.isFlag(F_PV);
-				break;
-			case 0xf2:
-				test = ! registers.isFlag(F_S);
-				break;
-			case 0xfa:
-				test = registers.isFlag(F_S);
-				break;
-			}
-			int addr = readNextWord();
-			if(test) {
-				registers.reg[_PC] = addr;
-			}
-			tStates += 10;
+	public void maskableInterrupt() {
+		if( ! registers.iff1) {
+			return;
 		}
-
-		public boolean willHandle(int instr) {
-			return ((instr & 0xc7) == 0xc2)|| instr == 0xc3;
+		switch(registers.im) {
+		case IM1:
+			push(registers.reg[_PC]);
+			registers.reg[_PC] = 0x38;
+			break;
+		default:
+			throw new UnsupportedOperationException("IM not supported");
 		}
 	}
 }}}
