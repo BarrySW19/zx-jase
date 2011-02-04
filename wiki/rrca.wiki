@@ -1,11 +1,17 @@
 {{{
-		// CPL
-		baseHandlers[0x2F] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_A] ^= 0xff;
-				adjustFlag(F_H, true);
-				adjustFlag(F_N, true);
-				tStates += 4;
-			}
-		};
+	private static Map<Integer, String> labels = new HashMap<Integer, String>();
+	static {
+		labels.put(0x028e, "KEY-SCAN");
+		labels.put(0x0296, "KEY-LINE");
+		labels.put(0x029f, "KEY-3KEYS");
+		labels.put(0x02a1, "KEY-BITS");
+		labels.put(0x02ab, "KEY-DONE");
+		labels.put(0x02bf, "KEYBOARD");
+		labels.put(0x02c6, "K-ST-LOOP");
+	}
+
+		if(labels.get(registers.reg[_PC]) != null) {
+			System.out.println(labels.get(registers.reg[_PC]));
+		}
+
 }}}
