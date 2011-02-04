@@ -17,6 +17,11 @@ public class RomTests {
 		display = new Display();
 		cpu = new Cpu();
 		SpectrumMemory sm = new SpectrumMemory();
+		
+		for(int i = 0x1150; i < 0x1160; i++) {
+			System.out.println(Integer.toHexString(i) + " " + Integer.toHexString(sm.get8bit(i)));
+		}
+		
 		sm.setListener(display);
 		cpu.setMemory(sm);
 		cpu.setRegisters(new Registers());
