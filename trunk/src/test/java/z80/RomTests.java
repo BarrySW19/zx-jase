@@ -33,7 +33,10 @@ public class RomTests {
 		while(true) {
 //			System.out.println(Integer.toString(cpu.getRegisters().reg[_PC], 16)
 //					+ " " + Integer.toString(cpu.getMemory().get8bit(cpu.getRegisters().reg[_PC]), 16));
-			cpu.execute();
+			cpu.executeToInterrupt();
+			if(cpu.getRegisters().iff1) {
+				cpu.maskableInterrupt();
+			}
 		}
 	}
 }

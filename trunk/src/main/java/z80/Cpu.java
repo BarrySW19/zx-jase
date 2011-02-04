@@ -8,6 +8,7 @@ import static z80.Registers.F_S;
 import static z80.Registers.F_Z;
 import static z80.Registers._A;
 import static z80.Registers._B;
+import static z80.Registers._C;
 import static z80.Registers._F;
 import static z80.Registers._I;
 import static z80.Registers._IY;
@@ -28,6 +29,7 @@ public class Cpu {
 	private Handler[] extended_FD = new Handler[256];
 	private Handler[] current = baseHandlers;
 	private OutputDevice[] outputs = new OutputDevice[256];
+	private InputDevice[] inputs = new InputDevice[256];
 
 	private boolean enableInt = false;
 
@@ -58,6 +60,9 @@ public class Cpu {
 				new Handler_RST(), new Handler_SCF_CCF(), new Handler_SUB(),
 				new Handler_XOR(), new ShiftHandler());
 
+		initialiseHandlers(extended_CB, new Handler_CB_SRL(),
+				new Handler_CB_RLC());
+		
 		initialiseHandlers(extended_ED, new Handler_ED_LD_I_A(),
 				new Handler_SBC_HL(), new Handler_LD_NN_RR(),
 				new Handler_LDDR());
@@ -78,6 +83,8 @@ public class Cpu {
 			extended_FD[i] = (extended_FD[i] == null ? nullHandler
 					: extended_FD[i]);
 		}
+		
+		inputs[0xFE] = new InputDevice();
 	}
 
 	private void loadSimpleHandlers() {
@@ -142,6 +149,15 @@ public class Cpu {
 			public void handle(int instr) {
 				memory.set16bit(readNextWord(), registers.getHL());
 				tStates += 16;
+			}
+		};
+		// CPL
+		baseHandlers[0x2F] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_A] ^= 0xff;
+				adjustFlag(F_H, true);
+				adjustFlag(F_N, true);
+				tStates += 4;
 			}
 		};
 		// LD (nn),HL
@@ -230,6 +246,18 @@ public class Cpu {
 		extended_ED[0x56] = new Handler() {
 			public void handle(int instr) {
 				registers.im = IntMode.IM1;
+				tStates += 8;
+			}
+		};
+		// IN A,(C)
+		extended_ED[0x78] = new Handler() {
+			public void handle(int instr) {
+				if(inputs[registers.reg[_C]] != null) {
+					System.out.println(Integer.toHexString(registers.getBC()));
+					registers.reg[_A] = inputs[registers.reg[_C]].read(registers.getBC());
+				} else {
+					registers.reg[_A] = 0;
+				}
 				tStates += 8;
 			}
 		};
@@ -333,12 +361,9 @@ public class Cpu {
 			tStates += 23;
 		} else if ((instr & 0xC7) == 0x46) {
 			int bit = (instr & 0x38) >> 3;
-			int flags = registers.reg[_F];
-			flags = adjustFlag(flags, F_Z,
-					(memory.get8bit(addr) & (1 << bit)) == 0);
-			flags = adjustFlag(flags, F_H, true);
-			flags = adjustFlag(flags, F_N, false);
-			registers.reg[_F] = flags;
+			adjustFlag(F_Z, (memory.get8bit(addr) & (1 << bit)) == 0);
+			adjustFlag(F_H, true);
+			adjustFlag(F_N, false);
 			tStates += 20;
 		} else if ((instr & 0xC7) == 0x86) {
 			// RES
@@ -392,7 +417,7 @@ public class Cpu {
 	}
 
 	public void execute() {
-		if (registers.reg[_PC] == 0x11e5) {
+		if (registers.reg[_PC] == 0x0296) {
 			int d = 1;
 		}
 		int instr = readNextByte();
@@ -406,7 +431,10 @@ public class Cpu {
 
 	class NullHandler implements Handler {
 		public void handle(int instr) {
-			System.out.println("Unhandled: 0x" + Integer.toString(instr, 16));
+			System.out.println("Unhandled: 0x"
+					+ Integer.toString(memory.get8bit(registers.reg[_PC-1]), 16)
+					+ " 0x" + Integer.toString(instr, 16)
+					+ " @ 0x" + Integer.toHexString(registers.reg[_PC]));
 			throw new RuntimeException("Unfinished CPU at " + tStates);
 		}
 	}
@@ -1051,6 +1079,40 @@ public class Cpu {
 		}
 	}
 
+	class Handler_CB_SRL implements LoadableHandler {
+		public void handle(int instr) {
+			int idx = instr & 0x07;
+			if(idx == 6) {
+				memory.set8bit(registers.getHL(), bit_SRL(memory.get8bit(registers.getHL())));
+				tStates += 15;
+			} else {
+				registers.reg[idx] = bit_SRL(registers.reg[idx]);
+				tStates += 8;
+			}
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xF8) == 0x38;
+		}
+	}
+
+	class Handler_CB_RLC implements LoadableHandler {
+		public void handle(int instr) {
+			int idx = instr & 0x07;
+			if(idx == 6) {
+				memory.set8bit(registers.getHL(), bit_RLC(memory.get8bit(registers.getHL())));
+				tStates += 15;
+			} else {
+				registers.reg[idx] = bit_RLC(registers.reg[idx]);
+				tStates += 8;
+			}
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xF8) == 0x00;
+		}
+	}
+
 	class Handler_LDDR implements LoadableHandler {
 		public void handle(int instr) {
 			int dir = (instr & 0x08) == 0 ? 1 : -1;
@@ -1149,7 +1211,7 @@ public class Cpu {
 			registers.reg[_F] &= ~(1 << bit);
 		}
 	}
-
+	
 	private void push(int val) {
 		registers.setSP(registers.getSP() - 2);
 		memory.set16bit(registers.getSP(), val);
@@ -1194,6 +1256,60 @@ public class Cpu {
 			break;
 		}
 		return test;
+	}
+	
+	public int bit_SRL(int arg) {
+		int rv = arg>>1;
+		adjustFlag(F_S, false);
+		adjustFlag(F_Z, rv == 0);
+		adjustFlag(F_H, false);
+		adjustFlag(F_PV, Integer.bitCount(rv) % 2 == 0);
+		adjustFlag(F_N, false);
+		adjustFlag(F_C, (arg & 0x01) == 1);
+		return rv;
+	}
+
+	public int bit_RLC(int arg) {
+		int rv = ((arg << 1) | (arg >> 7)) & 0xff;
+		adjustFlag(F_S, (rv & 0x80) != 0);
+		adjustFlag(F_Z, rv == 0);
+		adjustFlag(F_H, false);
+		adjustFlag(F_PV, Integer.bitCount(rv) % 2 == 0);
+		adjustFlag(F_N, false);
+		adjustFlag(F_C, (arg & 0x80) != 0);
+		return rv;
+	}
+
+	public void executeToInterrupt() {
+		long timeNow = System.currentTimeMillis();
+		long nextInt = timeNow + (20 - timeNow % 20);
+		
+		long startT = getTStates();
+		do {
+			execute();
+			if(getTStates() - startT >= 70000) {
+				try {
+					Thread.sleep(Math.max(0, nextInt - System.currentTimeMillis()));
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+		} while(System.currentTimeMillis() < nextInt);
+	}
+
+	public void maskableInterrupt() {
+		if( ! registers.iff1) {
+			return;
+		}
+		switch(registers.im) {
+		case IM1:
+			registers.iff1 = registers.iff2 = false;
+			push(registers.reg[_PC]);
+			registers.reg[_PC] = 0x38;
+			break;
+		default:
+			throw new UnsupportedOperationException("IM not supported");
+		}
 	}
 
 	interface Handler {
