@@ -32,8 +32,6 @@ public class Display extends JPanel implements SpectrumMemory.ScreenBufListener 
 	}
 
 	public void update(int addr, int val) {
-		System.out.println("SCR: 0x" + Integer.toHexString(addr)
-				+ " 0x" + Integer.toHexString(val));
 		screen[addr & 0x3fff] = val;
 		repaint();
 	}

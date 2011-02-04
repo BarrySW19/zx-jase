@@ -12,8 +12,13 @@ import static z80.Registers._C;
 import static z80.Registers._F;
 import static z80.Registers._I;
 import static z80.Registers._IY;
+import static z80.Registers._IX;
 import static z80.Registers._PC;
 import static z80.Registers._XAF;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import z80.Registers.IntMode;
 
 public class Cpu {
@@ -31,6 +36,17 @@ public class Cpu {
 	private OutputDevice[] outputs = new OutputDevice[256];
 	private InputDevice[] inputs = new InputDevice[256];
 
+	private static Map<Integer, String> labels = new HashMap<Integer, String>();
+	static {
+		labels.put(0x028e, "KEY-SCAN");
+		labels.put(0x0296, "KEY-LINE");
+		labels.put(0x029f, "KEY-3KEYS");
+		labels.put(0x02a1, "KEY-BITS");
+		labels.put(0x02ab, "KEY-DONE");
+		labels.put(0x02bf, "KEYBOARD");
+		labels.put(0x02c6, "K-ST-LOOP");
+	}
+
 	private boolean enableInt = false;
 
 	private void initialiseHandlers(Handler[] array,
@@ -39,7 +55,7 @@ public class Cpu {
 			for (LoadableHandler handler : handlers) {
 				if (handler.willHandle(i)) {
 					if (array[i] != null) {
-						System.out.println("Warning: duplicate handler: " + i);
+						System.out.println("Warning: duplicate handler: " + Integer.toHexString(i));
 					}
 					array[i] = handler;
 				}
@@ -61,7 +77,9 @@ public class Cpu {
 				new Handler_XOR(), new ShiftHandler());
 
 		initialiseHandlers(extended_CB, new Handler_CB_SRL(),
-				new Handler_CB_RLC());
+				new Handler_CB_RLC(), new Handler_CB_BIT(),
+				new Handler_CB_SET(),
+				new Handler_CB_RES());
 		
 		initialiseHandlers(extended_ED, new Handler_ED_LD_I_A(),
 				new Handler_SBC_HL(), new Handler_LD_NN_RR(),
@@ -242,6 +260,28 @@ public class Cpu {
 			}
 		};
 
+		// LD IX,nn
+		extended_DD[0x21] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_IX] = readNextWord();
+				tStates += 14;
+			}
+		};
+		// ADD IX,BC
+		extended_DD[0x09] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_IX] = add16bit(registers.reg[_IX], registers.getBC());
+				tStates += 15;
+			}
+		};
+		// JP (IX)
+		extended_DD[0xE9] = new Handler() {
+			public void handle(int instr) {
+				registers.reg[_PC] = registers.reg[_IX];
+				tStates += 8;
+			}
+		};
+
 		// IM 1
 		extended_ED[0x56] = new Handler() {
 			public void handle(int instr) {
@@ -331,14 +371,14 @@ public class Cpu {
 				handleCB(addr, readNextByte());
 			}
 		};
-		
-		for(int i: new int[] { 0xae, 0xc6, 0x7e, 0x86 }) {
-			extended_CB[i] = new Handler() {
-				public void handle(int instr) {
-					handleCB(registers.getHL(), instr);
-				}
-			};
-		}
+	}
+	
+	private int add16bit(int target, int arg) {
+		int result = target + arg;
+		adjustFlag(F_H, (target&0xfff)+(arg&0xfff) > 0xfff);
+		adjustFlag(F_N, false);
+		adjustFlag(F_C, (result & ~0xffff) != 0);
+		return result & 0xffff;
 	}
 
 	protected void set8bitAddFlags(int before, int after) {
@@ -417,8 +457,8 @@ public class Cpu {
 	}
 
 	public void execute() {
-		if (registers.reg[_PC] == 0x0296) {
-			int d = 1;
+		if(labels.get(registers.reg[_PC]) != null) {
+			System.out.println(labels.get(registers.reg[_PC]));
 		}
 		int instr = readNextByte();
 		// System.out.println("i " + Integer.toHexString(instr));
@@ -447,6 +487,29 @@ public class Cpu {
 
 		public boolean willHandle(int instr) {
 			return instr == 0x2a;
+		}
+	}
+
+	class Handler_CB_BIT implements LoadableHandler {
+		public void handle(int instr) {
+			int idx = instr & 0x07;
+			int bit = (instr & 0x38)>>3;
+			int data;
+			if(idx == 0x06) {
+				data = memory.get8bit(registers.getHL());
+				tStates += 12;
+			} else {
+				data = registers.reg[idx];
+				tStates += 8;
+			}
+			int res = data & (1<<bit);
+			adjustFlag(F_Z, res == 0);
+			adjustFlag(F_H, true);
+			adjustFlag(F_N, false);
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xC0) == 0x40;
 		}
 	}
 
@@ -1093,6 +1156,42 @@ public class Cpu {
 
 		public boolean willHandle(int instr) {
 			return (instr & 0xF8) == 0x38;
+		}
+	}
+
+	class Handler_CB_SET implements LoadableHandler {
+		public void handle(int instr) {
+			int bit = (instr & 0x38)>>3;
+			int idx = (instr & 0x07);
+			if(idx == 6) {
+				memory.set8bit(registers.getHL(), memory.get8bit(registers.getHL()) | (1<<bit));
+				tStates += 15;
+			} else {
+				registers.reg[idx] |= (1<<bit);
+				tStates += 8;
+			}
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xC0) == 0xC0;
+		}
+	}
+
+	class Handler_CB_RES implements LoadableHandler {
+		public void handle(int instr) {
+			int bit = (instr & 0x38)>>3;
+			int idx = (instr & 0x07);
+			if(idx == 6) {
+				memory.set8bit(registers.getHL(), memory.get8bit(registers.getHL()) & ~(1<<bit));
+				tStates += 15;
+			} else {
+				registers.reg[idx] &= ~(1<<bit);
+				tStates += 8;
+			}
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xC0) == 0x80;
 		}
 	}
 
