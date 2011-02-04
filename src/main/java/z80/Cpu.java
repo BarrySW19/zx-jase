@@ -365,6 +365,17 @@ public class Cpu {
 				tStates += 19;
 			}
 		};
+		// SUB,(IY+d)
+		extended_FD[0x96] = new Handler() {
+			public void handle(int instr) {
+				int addr = registers.reg[_IY] + readNextByte();
+				int before = registers.reg[_A];
+				int after = registers.reg[_A] - memory.get8bit(addr);
+				registers.reg[_A] = (after & 0xff);
+				set8bitSubFlags(before, after);
+				tStates += 19;
+			}
+		};
 		extended_FD[0xCB] = new Handler() {
 			public void handle(int instr) {
 				int addr = registers.reg[_IY] + readNextByte();
@@ -392,6 +403,17 @@ public class Cpu {
 		flags = adjustFlag(flags, F_N, false);
 		flags = adjustFlag(flags, F_C, (after & ~0xff) != 0);
 		registers.reg[_F] = flags;
+	}
+	
+	private void set8bitSubFlags(int before, int after) {
+		int arg = before - after;
+		adjustFlag(F_S, (after & 0x80) == 0x80);
+		adjustFlag(F_Z, after == 0);
+		adjustFlag(F_H, ((before & 0x0f) - (arg & 0x0f)) < 0);
+		adjustFlag(F_PV, (before & 0x80) != (arg & 0x80)
+				&& (before & 0x80) != (after & 0x80));
+		adjustFlag(F_N, true);
+		adjustFlag(F_C, (after & ~0xff) != 0);
 	}
 
 	private void handleCB(int addr, int instr) {
@@ -704,15 +726,7 @@ public class Cpu {
 			int after = registers.reg[_A] - src;
 			registers.reg[_A] = (after & 0xff);
 
-			int flags = registers.reg[_F];
-			flags = adjustFlag(flags, F_S, (registers.reg[_A] & 0x80) == 0x80);
-			flags = adjustFlag(flags, F_Z, registers.reg[_A] == 0);
-			flags = adjustFlag(flags, F_H, ((before & 0x0f) - (src & 0x0f)) < 0);
-			flags = adjustFlag(flags, F_PV, (before & 0x80) != (src & 0x80)
-					&& (before & 0x80) != (after & 0x80));
-			flags = adjustFlag(flags, F_N, true);
-			flags = adjustFlag(flags, F_C, (after & ~0xff) != 0);
-			registers.reg[_F] = flags;
+			set8bitSubFlags(before, after);
 
 			tStates += 4;
 		}
