@@ -26,8 +26,8 @@ public class SpectrumMemory extends Memory {
 			super.set8bit(addr, val);
 		}
 		if(addr >= 0x4000 && addr < 0x5B00) {
-//			System.out.println("SCR: 0x" + Integer.toHexString(addr)
-//					+ " 0x" + Integer.toHexString(val));
+			System.out.println("SCR: 0x" + Integer.toHexString(addr)
+					+ " 0x" + Integer.toHexString(val));
 			listener.update(addr, val);
 		}
 	}

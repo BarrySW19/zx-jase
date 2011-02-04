@@ -38,13 +38,29 @@ public class Cpu {
 
 	private static Map<Integer, String> labels = new HashMap<Integer, String>();
 	static {
-		labels.put(0x028e, "KEY-SCAN");
-		labels.put(0x0296, "KEY-LINE");
-		labels.put(0x029f, "KEY-3KEYS");
-		labels.put(0x02a1, "KEY-BITS");
-		labels.put(0x02ab, "KEY-DONE");
-		labels.put(0x02bf, "KEYBOARD");
-		labels.put(0x02c6, "K-ST-LOOP");
+//		labels.put(0x028e, "KEY-SCAN");
+//		labels.put(0x0296, "KEY-LINE");
+//		labels.put(0x029f, "KEY-3KEYS");
+//		labels.put(0x02a1, "KEY-BITS");
+//		labels.put(0x02ab, "KEY-DONE");
+//		labels.put(0x02bf, "KEYBOARD");
+//		labels.put(0x02c6, "K-ST-LOOP");
+
+		labels.put(0x02F1, "K-NEW");
+		labels.put(0x0308, "K-END");
+		labels.put(0x0333, "K-DECODE");
+		labels.put(0x0341, "K-E-LET");
+		labels.put(0x034a, "K-LOOK-UP");
+		labels.put(0x034f, "K-KLC-LET");
+		labels.put(0x0364, "K-TOKENS");
+		labels.put(0x0367, "K-DIGIT");
+		labels.put(0x0382, "K-8-&-9");
+
+		//labels.put(0x10A8, "KEY-INPUT");
+		//labels.put(0x10A8, "KEY-M&CL");
+		labels.put(0x111B, "KEY-DONE");
+
+		labels.put(0x0F81, "ADD-CHAR");
 	}
 
 	private boolean enableInt = false;
@@ -293,7 +309,6 @@ public class Cpu {
 		extended_ED[0x78] = new Handler() {
 			public void handle(int instr) {
 				if(inputs[registers.reg[_C]] != null) {
-					System.out.println(Integer.toHexString(registers.getBC()));
 					registers.reg[_A] = inputs[registers.reg[_C]].read(registers.getBC());
 				} else {
 					registers.reg[_A] = 0;
