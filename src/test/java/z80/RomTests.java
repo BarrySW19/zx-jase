@@ -1,11 +1,16 @@
 package z80;
 
-import static z80.Registers._PC;
+import static org.junit.Assert.assertEquals;
+import static z80.Registers.*;
 
 import javax.swing.JFrame;
 
 import org.junit.Before;
 import org.junit.Test;
+import org.razvan.jzx.ConsoleLogger;
+import org.razvan.jzx.ILogger;
+import org.razvan.jzx.Z80;
+import org.razvan.jzx.v48.Spectrum;
 
 public class RomTests {
 
@@ -18,7 +23,7 @@ public class RomTests {
 		cpu = new Cpu();
 		SpectrumMemory sm = new SpectrumMemory();
 		
-		for(int i = 0x1150; i < 0x1160; i++) {
+		for(int i = 0x11df; i <= 0x11df; i++) {
 			System.out.println(Integer.toHexString(i) + " " + Integer.toHexString(sm.get8bit(i)));
 		}
 		
@@ -27,6 +32,40 @@ public class RomTests {
 		cpu.setRegisters(new Registers());
 	}
 	
+	@Test
+	public void compare() {
+		ILogger log = new ConsoleLogger();
+		Z80 z80 = new Z80();
+		Spectrum spectrum = new Spectrum();
+		spectrum.init(z80, log);
+		z80.init(spectrum, log);
+		z80.stop();
+
+		for(int i = 0; i < 1000000; i++) {
+			System.out.println("Instr: " + i + ", pc=" + Integer.toHexString(
+					cpu.getRegisters().reg[_PC]));
+			if(i == 196626) {
+				i += 0;
+			}
+			z80.emulate();
+			cpu.execute();
+			checkInSync(z80);
+		}
+	}
+	
+	private void checkInSync(Z80 z80) {
+		assertEquals("PC", cpu.getRegisters().reg[_PC], z80.m_pc16);
+		
+		assertEquals("A", cpu.getRegisters().reg[_A], z80.m_a8);
+		assertEquals("B", cpu.getRegisters().reg[_B], z80.m_b8);
+		assertEquals("C", cpu.getRegisters().reg[_C], z80.m_c8);
+		assertEquals("D", cpu.getRegisters().reg[_D], z80.m_d8);
+		assertEquals("E", cpu.getRegisters().reg[_E], z80.m_e8);
+		assertEquals("F", cpu.getRegisters().reg[_F], z80.getF());
+		assertEquals("H", cpu.getRegisters().reg[_H], z80.m_h8);
+		assertEquals("L", cpu.getRegisters().reg[_L], z80.m_l8);
+	}
+
 	@Test
 	public void runFromStart() {
 		JFrame jf = new JFrame();
