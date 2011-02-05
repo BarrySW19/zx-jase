@@ -43,8 +43,8 @@ public class RomTests {
 
 		for(int i = 0; i < 1000000; i++) {
 			System.out.println("Instr: " + i + ", pc=" + Integer.toHexString(
-					cpu.getRegisters().reg[_PC]));
-			if(i == 196626) {
+					cpu.getRegisters().reg[_PC]) + ", ts=" + cpu.getTStates());
+			if(i == 639272) {
 				i += 0;
 			}
 			z80.emulate();
@@ -55,13 +55,14 @@ public class RomTests {
 	
 	private void checkInSync(Z80 z80) {
 		assertEquals("PC", cpu.getRegisters().reg[_PC], z80.m_pc16);
+		assertEquals("SP", cpu.getRegisters().getSP(), z80.m_sp16);
 		
 		assertEquals("A", cpu.getRegisters().reg[_A], z80.m_a8);
 		assertEquals("B", cpu.getRegisters().reg[_B], z80.m_b8);
 		assertEquals("C", cpu.getRegisters().reg[_C], z80.m_c8);
 		assertEquals("D", cpu.getRegisters().reg[_D], z80.m_d8);
 		assertEquals("E", cpu.getRegisters().reg[_E], z80.m_e8);
-		assertEquals("F", cpu.getRegisters().reg[_F], z80.getF());
+		assertEquals("F", t8(cpu.getRegisters().reg[_F]), t8(z80.getF()));
 		assertEquals("H", cpu.getRegisters().reg[_H], z80.m_h8);
 		assertEquals("L", cpu.getRegisters().reg[_L], z80.m_l8);
 	}
@@ -82,5 +83,10 @@ public class RomTests {
 				cpu.maskableInterrupt();
 			}
 		}
+	}
+	
+	private String t8(int arg) {
+		String rv = "00000000" + Integer.toBinaryString(arg);
+		return rv.substring(rv.length() - 8);
 	}
 }
