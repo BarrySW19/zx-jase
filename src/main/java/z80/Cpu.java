@@ -45,22 +45,19 @@ public class Cpu {
 //		labels.put(0x02ab, "KEY-DONE");
 //		labels.put(0x02bf, "KEYBOARD");
 //		labels.put(0x02c6, "K-ST-LOOP");
-
-		labels.put(0x02F1, "K-NEW");
-		labels.put(0x0308, "K-END");
-		labels.put(0x0333, "K-DECODE");
-		labels.put(0x0341, "K-E-LET");
-		labels.put(0x034a, "K-LOOK-UP");
-		labels.put(0x034f, "K-KLC-LET");
-		labels.put(0x0364, "K-TOKENS");
-		labels.put(0x0367, "K-DIGIT");
-		labels.put(0x0382, "K-8-&-9");
-
-		//labels.put(0x10A8, "KEY-INPUT");
-		//labels.put(0x10A8, "KEY-M&CL");
-		labels.put(0x111B, "KEY-DONE");
-
-		labels.put(0x0F81, "ADD-CHAR");
+//		labels.put(0x02F1, "K-NEW");
+//		labels.put(0x0308, "K-END");
+//		labels.put(0x0333, "K-DECODE");
+//		labels.put(0x0341, "K-E-LET");
+//		labels.put(0x034a, "K-LOOK-UP");
+//		labels.put(0x034f, "K-KLC-LET");
+//		labels.put(0x0364, "K-TOKENS");
+//		labels.put(0x0367, "K-DIGIT");
+//		labels.put(0x0382, "K-8-&-9");
+//		labels.put(0x10A8, "KEY-INPUT");
+//		labels.put(0x10A8, "KEY-M&CL");
+//		labels.put(0x111B, "KEY-DONE");
+//		labels.put(0x0F81, "ADD-CHAR");
 	}
 
 	private boolean enableInt = false;
@@ -316,6 +313,23 @@ public class Cpu {
 				tStates += 8;
 			}
 		};
+		// NEG
+		extended_ED[0x44] = new Handler() {
+			public void handle(int instr) {
+				int res = 0 - registers.reg[_A];
+				int preA = registers.reg[_A];
+				registers.reg[_A] = (res & 0xff);
+				
+				adjustFlag(F_S, (res & 0x80) != 0);
+				adjustFlag(F_Z, registers.reg[_A] == 0);
+				// adjustFlag(F_H, false);
+				adjustFlag(F_PV, preA == 0x80);
+				adjustFlag(F_N, true);
+				adjustFlag(F_C, preA != 0x00);
+				
+				tStates += 8;
+			}
+		};
 		// LD BC,(nn)
 		extended_ED[0x4b] = new Handler() {
 			public void handle(int instr) {
@@ -494,10 +508,10 @@ public class Cpu {
 	}
 
 	public void execute() {
-		if(registers.reg[_PC] == 0x02c2) {
-			System.out.println("de " + Integer.toHexString(
-					registers.getDE()) + " " + registers.isFlag(F_Z));
-		}
+//		if(registers.reg[_PC] == 0x02c2) {
+//			System.out.println("de " + Integer.toHexString(
+//					registers.getDE()) + " " + registers.isFlag(F_Z));
+//		}
 		
 		if(labels.get(registers.reg[_PC]) != null) {
 			System.out.println(labels.get(registers.reg[_PC]));

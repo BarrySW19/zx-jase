@@ -9,6 +9,8 @@ import javax.swing.JPanel;
 public class Display extends JPanel implements SpectrumMemory.ScreenBufListener {
 
 	private static final long serialVersionUID = -3960099300040985910L;
+	private static int MAG = 3;
+	private int intCount = 0;
 	
 	private int[] screen = new int[0x1B00];
 	private static int NORM = 224;
@@ -24,11 +26,21 @@ public class Display extends JPanel implements SpectrumMemory.ScreenBufListener 
 	};
 	
 	public Display() {
-		Dimension d = new Dimension(256, 192);
+		Dimension d = new Dimension(256*MAG, 192*MAG);
 		this.setSize(d);
 		this.setMaximumSize(d);
 		this.setMinimumSize(d);
 		this.setPreferredSize(d);
+	}
+	
+	public void interrupt() {
+		intCount++;
+		if(intCount == 50) {
+			intCount = 0;
+		}
+		if(intCount == 0 || intCount == 25) {
+			repaint();
+		}
 	}
 
 	public void update(int addr, int val) {
@@ -39,8 +51,14 @@ public class Display extends JPanel implements SpectrumMemory.ScreenBufListener 
 	@Override
 	public void paint(Graphics g) {
 		for(int i = 0; i < 0x300; i++) {
-			g.setColor(colors[(screen[i+0x1800] & 0x38)>>3]);
-			g.fillRect((i%32)*8, (i/32)*8, 8, 8);
+			int colorAttr = screen[i+0x1800];
+			Color bg = colors[(colorAttr&0x38)>>3];
+			if(intCount >= 25 && (colorAttr & 0x80) != 0) {
+				bg = colors[intCount >= 25 ? (colorAttr&0x07) : (colorAttr&0x38)>>3];
+			}
+			
+			g.setColor(bg);
+			g.fillRect((i%32)*8*MAG, (i/32)*8*MAG, 8*MAG, 8*MAG);
 		}
 		
 		for(int i = 0; i < 0x1800; i++) {
@@ -51,10 +69,15 @@ public class Display extends JPanel implements SpectrumMemory.ScreenBufListener 
 			int y = pixrow + row*8 + blk*64;
 			int colorLoc = y / 8 * 32 + x;
 			if(screen[i] != 0) {
-				g.setColor(colors[screen[colorLoc+0x1800] & 0x7]);
+				int colorAttr = screen[colorLoc+0x1800];
+				Color fg = colors[colorAttr & 0x7];
+				if(intCount >= 25 && (colorAttr & 0x80) != 0) {
+					fg = colors[intCount < 25 ? (colorAttr&0x07) : (colorAttr&0x38)>>3];
+				}
+				g.setColor(fg);
 				for(int j = 0; j < 8; j++) {
 					if((screen[i] & (1<<j)) != 0) {
-						g.drawLine(x*8 + (7-j), y, x*8 + (7-j), y);
+						g.fillRect((x*8 + (7-j))*MAG, y*MAG, MAG, MAG);
 					}
 				}
 			}
