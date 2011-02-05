@@ -82,6 +82,7 @@ public class RomTests {
 			if(cpu.getRegisters().iff1) {
 				cpu.maskableInterrupt();
 			}
+			display.interrupt();
 		}
 	}
 	
