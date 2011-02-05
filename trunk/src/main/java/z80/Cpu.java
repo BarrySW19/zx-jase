@@ -1,6 +1,6 @@
 package z80;
 
-import static z80.Registers.F_C;
+import static z80.Registers.*;
 import static z80.Registers.F_H;
 import static z80.Registers.F_N;
 import static z80.Registers.F_PV;
@@ -494,6 +494,11 @@ public class Cpu {
 	}
 
 	public void execute() {
+		if(registers.reg[_PC] == 0x02c2) {
+			System.out.println("de " + Integer.toHexString(
+					registers.getDE()) + " " + registers.isFlag(F_Z));
+		}
+		
 		if(labels.get(registers.reg[_PC]) != null) {
 			System.out.println(labels.get(registers.reg[_PC]));
 		}
@@ -894,14 +899,13 @@ public class Cpu {
 			registers.reg[_A] = registers.reg[_A] & arg;
 			int res = registers.reg[_A];
 
-			int flags = registers.reg[_F];
-			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
-			flags = adjustFlag(flags, F_Z, res == 0);
-			flags = adjustFlag(flags, F_H, true);
-			// flags = adjustFlag(flags, F_PV, Integer.bitCount(res) % 2 == 0);
-			flags = adjustFlag(flags, F_N, false);
-			flags = adjustFlag(flags, F_C, false);
-			registers.reg[_F] = flags;
+			adjustFlag(F_S, (res & 0x80) == 0x80);
+			adjustFlag(F_Z, res == 0);
+			adjustFlag(F_H, true);
+			adjustFlag(F_PV, Integer.bitCount(res) % 2 == 0);
+			adjustFlag(F_N, false);
+			adjustFlag(F_C, false);
+			copy35Bits(res);
 
 			tStates += 4;
 		}
@@ -922,24 +926,27 @@ public class Cpu {
 			}
 
 			int res = registers.reg[_A];
+			int calc = res - arg;
 
-			int flags = registers.reg[_F];
-			flags = adjustFlag(flags, F_S, ((res - arg) & 0x80) == 0x80);
-			flags = adjustFlag(flags, F_Z, res == arg);
+			adjustFlag(F_S, (calc & 0x80) == 0x80);
+			adjustFlag(F_Z, res == arg);
 			// TODO flags = adjustFlag(flags, F_H, false);
-			flags = adjustFlag(flags, F_PV,
-					(res < arg) ? !((res & 0x80) == 0x80)
-							: (res & 0x80) == 0x80);
-			flags = adjustFlag(flags, F_N, true);
-			flags = adjustFlag(flags, F_C, res < arg);
-			registers.reg[_F] = flags;
-
+			adjustFlag(F_PV, (res&0x80) != (arg&0x80) && (res&0x80) != (calc&0x80));
+			adjustFlag(F_N, true);
+			adjustFlag(F_C, (calc & ~0xff) != 0);
+			copy35Bits(arg);
+			
 			tStates += 4;
 		}
 
 		public boolean willHandle(int instr) {
 			return (instr & 0xf8) == 0xb8 || instr == 0xFE;
 		}
+	}
+	
+	private void copy35Bits(int arg) {
+		adjustFlag(F_5, (arg & 0x20) != 0);
+		adjustFlag(F_3, (arg & 0x08) != 0);
 	}
 
 	class Handler_RST implements LoadableHandler {
@@ -1271,15 +1278,14 @@ public class Cpu {
 			registers.setHL((preHL - arg) & 0xffff);
 			int res = registers.getHL();
 
-			int flags = registers.reg[_F];
-			flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
-			flags = adjustFlag(flags, F_Z, res == 0);
-			flags = adjustFlag(flags, F_H, ((preHL & 0x0fff) < (arg & 0x0fff)));
-			flags = adjustFlag(flags, F_PV, (preHL & 0x80) != (arg & 0x8000)
+			adjustFlag(F_S, (res & 0x80) == 0x80);
+			adjustFlag(F_Z, res == 0);
+			adjustFlag(F_H, ((preHL & 0x0fff) < (arg & 0x0fff)));
+			adjustFlag(F_PV, (preHL & 0x80) != (arg & 0x8000)
 					&& (preHL & 0x8000) != (res & 0x8000));
-			flags = adjustFlag(flags, F_N, true);
-			flags = adjustFlag(flags, F_C, (res & ~0xffff) != 0);
-			registers.reg[_F] = flags;
+			adjustFlag(F_N, true);
+			adjustFlag(F_C, (res & ~0xffff) != 0);
+			copy35Bits(registers.reg[_H]);
 
 			tStates += 15;
 		}

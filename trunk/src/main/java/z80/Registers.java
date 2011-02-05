@@ -10,7 +10,9 @@ public class Registers {
 	
 	static int F_S = 7;
 	static int F_Z = 6;
+	static int F_5 = 5;
 	static int F_H = 4;
+	static int F_3 = 3;
 	static int F_PV = 2;
 	static int F_N = 1;
 	static int F_C = 0;
