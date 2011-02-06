@@ -30,6 +30,7 @@ public class RomTests {
 		sm.setListener(display);
 		cpu.setMemory(sm);
 		cpu.setRegisters(new Registers());
+		cpu.setKeyboard(display);
 	}
 	
 	@Test
@@ -74,6 +75,7 @@ public class RomTests {
 		jf.pack();
 		jf.setVisible(true);
 		jf.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		jf.addKeyListener(display);
 		
 		while(true) {
 //			System.out.println(Integer.toString(cpu.getRegisters().reg[_PC], 16)
