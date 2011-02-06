@@ -114,14 +114,27 @@ public class Cpu {
 			extended_FD[i] = (extended_FD[i] == null ? nullHandler
 					: extended_FD[i]);
 		}
-		
-		inputs[0xFE] = new InputDevice();
+	}
+	
+	public void setKeyboard(InputDevice inputDevice) {
+		inputs[0xfe] = inputDevice;
 	}
 
 	private void loadSimpleHandlers() {
 		// NOP
 		baseHandlers[0x00] = new Handler() {
 			public void handle(int instr) {
+				tStates += 4;
+			}
+		};
+		// RLCA
+		baseHandlers[0x07] = new Handler() {
+			public void handle(int instr) {
+				int bit7 = registers.reg[_A] & 0x80;
+				registers.reg[_A] = ((registers.reg[_A] << 1) | (bit7>>7)) & 0xff;
+				adjustFlag(F_H, false);
+				adjustFlag(F_N, false);
+				adjustFlag(F_C, bit7 == 0x80);
 				tStates += 4;
 			}
 		};
@@ -147,6 +160,17 @@ public class Cpu {
 				} else {
 					tStates += 8;
 				}
+			}
+		};
+		// RLA
+		baseHandlers[0x17] = new Handler() {
+			public void handle(int instr) {
+				int bit7 = registers.reg[_A] & 0x80;
+				registers.reg[_A] = ((registers.reg[_A] << 1) | registers.getFlag(F_C)) & 0xff;
+				adjustFlag(F_H, false);
+				adjustFlag(F_N, false);
+				adjustFlag(F_C, bit7 == 0x80);
+				tStates += 4;
 			}
 		};
 		baseHandlers[0x1F] = new Handler() {

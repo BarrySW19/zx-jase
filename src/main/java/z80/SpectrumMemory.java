@@ -18,6 +18,10 @@ public class SpectrumMemory extends Memory {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+		
+		for(i = 0x1b2c; i <= 0x1b2f; i++) {
+			System.out.println("X " + Integer.toHexString(get8bit(i)));
+		}
 	}
 	
 	@Override
