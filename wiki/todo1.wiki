@@ -1,18 +1,14 @@
 {{{
-		// EX (SP),HL              
-		baseHandlers[0xe3] = new Handler() {
+		// HALT
+		baseHandlers[0x76] = new Handler() {
 			public void handle(int instr) {
-				int tmp = registers.getHL();
-				registers.setHL(memory.get16bit(registers.getSP()));
-				memory.set16bit(registers.getSP(), tmp);
-				tStates += 19;
+				halted = true;
+				tStates += 4;
 			}
 		};
-		// LD A,(DE)              
-		baseHandlers[0x1a] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_A] = memory.get8bit(registers.getDE());
-				tStates += 7;
-			}
-		};
+
+
+	public int bit_RR(int arg) {
+		int rv = ((arg >> 1) | (registers.getFlag(F_C) << 7)) & 0xff;
+
 }}}
