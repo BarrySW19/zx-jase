@@ -1,0 +1,31 @@
+
+```
+	public int bit_RR(int arg) {
+		int rv = ((arg >> 1) | (registers.getFlag(F_C) << 7)) & 0xff;
+		adjustFlag(F_S, (rv & 0x80) != 0);
+		adjustFlag(F_Z, rv == 0);
+		adjustFlag(F_H, false);
+		adjustFlag(F_PV, Integer.bitCount(rv) % 2 == 0);
+		adjustFlag(F_N, false);
+		adjustFlag(F_C, (arg & 0x01) != 0);
+		return rv;
+	}
+
+	class Handler_CB_RR implements LoadableHandler {
+		public void handle(int instr) {
+			int idx = instr & 0x07;
+			if(idx == 6) {
+				memory.set8bit(registers.getHL(), bit_RR(memory.get8bit(registers.getHL())));
+				tStates += 15;
+			} else {
+				registers.reg[idx] = bit_RR(registers.reg[idx]);
+				tStates += 8;
+			}
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xF8) == 0x18;
+		}
+	}
+
+```

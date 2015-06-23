@@ -1,0 +1,19 @@
+
+```
+	public void executeToInterrupt() {
+		long timeNow = System.currentTimeMillis();
+		long nextInt = timeNow + (20 - timeNow % 20);
+		
+		long startT = getTStates();
+		while(System.currentTimeMillis() < nextInt) {
+			execute();
+			if(getTStates() - startT >= 70000) {
+				try {
+					Thread.sleep(nextInt - System.currentTimeMillis());
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+```

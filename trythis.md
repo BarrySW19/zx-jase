@@ -1,0 +1,21 @@
+
+```
+	private void postIncrementFlagAdjust(int result) {
+		adjustFlag(F_S, (result & 0x80) == 0x80);
+		adjustFlag(F_Z, result == 0);
+		adjustFlag(F_H, (result & 0x0f) == 0);
+		adjustFlag(F_PV, result == 0x80);
+		adjustFlag(F_N, false);
+		copy35Bits(result);
+	}
+
+		// INC (IY+d)
+		extended_FD[0x34] = new Handler() {
+			public void handle(int instr) {
+				int addr = registers.reg[_IY] + readNextByte();
+				memory.set8bit(addr, (memory.get8bit(addr) + 1) & 0xff);
+				postIncrementFlagAdjust(memory.get8bit(addr));
+				tStates += 23;
+			}
+		};
+```

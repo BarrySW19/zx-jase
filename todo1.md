@@ -1,0 +1,15 @@
+
+```
+		// HALT
+		baseHandlers[0x76] = new Handler() {
+			public void handle(int instr) {
+				halted = true;
+				tStates += 4;
+			}
+		};
+
+
+	public int bit_RR(int arg) {
+		int rv = ((arg >> 1) | (registers.getFlag(F_C) << 7)) & 0xff;
+
+```
