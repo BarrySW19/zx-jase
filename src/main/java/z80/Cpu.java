@@ -1592,7 +1592,7 @@ public class Cpu {
         long startT = getTStates();
         do {
             execute();
-            if (getTStates() - startT >= 7000) {
+            if (getTStates() - startT >= 70000) {
                 try {
                     Thread.sleep(Math.max(0, nextInt - System.currentTimeMillis()));
                 } catch (InterruptedException e) {
