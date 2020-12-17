@@ -10,12 +10,13 @@ import static org.junit.Assert.*;
 public class CpuTests {
 
 	private Cpu cpu;
+	private Registers registers;
 
 	@Before
 	public void setUP() {
 		cpu = new Cpu();
 		cpu.setMemory(new Memory());
-		cpu.setRegisters(new Registers());
+		cpu.setRegisters(registers = new Registers());
 	}
 
 	@Test

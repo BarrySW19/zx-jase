@@ -1,16 +1,13 @@
 package z80;
 
-import static org.junit.Assert.assertEquals;
-import static z80.Registers.*;
-
-import javax.swing.JFrame;
-
 import org.junit.Before;
 import org.junit.Test;
-import org.razvan.jzx.ConsoleLogger;
-import org.razvan.jzx.ILogger;
-import org.razvan.jzx.Z80;
-import org.razvan.jzx.v48.Spectrum;
+
+import javax.swing.*;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.PrintStream;
 
 public class RomTests {
 
@@ -32,7 +29,8 @@ public class RomTests {
 		cpu.setRegisters(new Registers());
 		cpu.setKeyboard(display);
 	}
-	
+
+	/*
 	@Test
 	public void compare() {
 		ILogger log = new ConsoleLogger();
@@ -66,6 +64,27 @@ public class RomTests {
 		assertEquals("F", t8(cpu.getRegisters().reg[_F]), t8(z80.getF()));
 		assertEquals("H", cpu.getRegisters().reg[_H], z80.m_h8);
 		assertEquals("L", cpu.getRegisters().reg[_L], z80.m_l8);
+	}*/
+
+	@Test
+	public void dumpRom() throws IOException {
+		final InputStream is = ClassLoader.getSystemResourceAsStream("original.rom");
+		int i;
+		int idx = 0;
+		byte[] rom = new byte[16384];
+		while ((i = is.read()) != -1) {
+			rom[idx++] = (byte) i;
+		}
+
+		PrintStream fs = new PrintStream(new FileOutputStream("/Users/barsmi/rom"));
+		for(int j = 0; j < rom.length; j += 16) {
+			fs.print(String.format("%04x", j));
+			for(int k = 0; k < 16; k++) {
+				fs.print(String.format(" %02x", rom[j+k]));
+			}
+			fs.print("\n");
+		}
+		fs.close();
 	}
 
 	@Test

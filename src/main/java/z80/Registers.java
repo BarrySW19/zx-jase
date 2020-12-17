@@ -1,8 +1,8 @@
 package z80;
 
 public class Registers {
-	
-	static enum IntMode { IM0, IM1, IM2 };
+
+	enum IntMode { IM0, IM1, IM2 };
 	
 	int[] reg = new int[20];
 	boolean iff1, iff2;
@@ -39,7 +39,7 @@ public class Registers {
 	static int _XHL = 16;
 	
 	static int _S = 17;
-	private static int _SP = 18;
+	static int _SP = 18;
 	static int _PC = 19;
 	
 	public void exx() {
@@ -55,7 +55,10 @@ public class Registers {
 		setHL(reg[_XHL]);
 		reg[_XHL] = v;
 	}
-	
+
+	/**
+	 * @return 1 or 0 depending on whether the flag is set.
+	 */
 	public int getFlag(int flag) {
 		return (reg[_F] & (1<<flag))>>flag;
 	}
@@ -63,7 +66,15 @@ public class Registers {
 	public boolean isFlag(int flag) {
 		return (reg[_F] & (1<<flag)) != 0;
 	}
-	
+
+	public void clearFlag(int c) {
+		reg[_F] &= ~(1 << c);
+	}
+
+	public void setFlag(int c) {
+		reg[_F] |= 1 << c;
+	}
+
 	public int getAF() {
 		return reg[_F] << 8 | reg[_A];
 	}

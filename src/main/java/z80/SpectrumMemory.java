@@ -41,6 +41,6 @@ public class SpectrumMemory extends Memory {
 	}
 	
 	interface ScreenBufListener {
-		public void update(int addr, int val);
+		void update(int addr, int val);
 	}
 }

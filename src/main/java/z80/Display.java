@@ -14,11 +14,11 @@ public class Display extends JPanel
 		implements SpectrumMemory.ScreenBufListener, KeyListener, InputDevice {
 
 	private static final long serialVersionUID = -3960099300040985910L;
-	private static int MAG = 3;
+	private static final int MAG = 3;
 	private int intCount = 0;
 	
-	private Map<Integer, Integer> keyValues = new HashMap<Integer, Integer>();
-	private static Map<Integer, Integer> keyEvents = new HashMap<Integer, Integer>();
+	private final Map<Integer, Integer> keyValues = new HashMap<Integer, Integer>();
+	private static final Map<Integer, Integer> keyEvents = new HashMap<Integer, Integer>();
 	
 	private int[] screen = new int[0x1B00];
 	private static int NORM = 224;

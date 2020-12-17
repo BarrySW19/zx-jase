@@ -1,7 +1,7 @@
 package z80;
 
 public class Memory {
-	private int[] ram = new int[65536];
+	private final int[] ram = new int[65536];
 
 	public int get8bit(int addr) {
 		return ram[addr & 0xffff];

@@ -1,42 +1,28 @@
 package z80;
 
-import static z80.Registers.*;
-import static z80.Registers.F_H;
-import static z80.Registers.F_N;
-import static z80.Registers.F_PV;
-import static z80.Registers.F_S;
-import static z80.Registers.F_Z;
-import static z80.Registers._A;
-import static z80.Registers._B;
-import static z80.Registers._C;
-import static z80.Registers._F;
-import static z80.Registers._I;
-import static z80.Registers._IY;
-import static z80.Registers._IX;
-import static z80.Registers._PC;
-import static z80.Registers._XAF;
+import z80.Registers.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
-import z80.Registers.IntMode;
+import static z80.Registers.*;
 
 public class Cpu {
-
 	private Memory memory;
 	private Registers registers;
 	private long tStates = 0;
 
-	private Handler[] baseHandlers = new Handler[256];
-	private Handler[] extended_CB = new Handler[256];
-	private Handler[] extended_DD = new Handler[256];
-	private Handler[] extended_ED = new Handler[256];
-	private Handler[] extended_FD = new Handler[256];
+	private final Handler[] baseHandlers = new Handler[256];
+	private final Handler[] extended_CB = new Handler[256];
+	private final Handler[] extended_DD = new Handler[256];
+	private final Handler[] extended_ED = new Handler[256];
+	private final Handler[] extended_FD = new Handler[256];
 	private Handler[] current = baseHandlers;
-	private OutputDevice[] outputs = new OutputDevice[256];
-	private InputDevice[] inputs = new InputDevice[256];
+	private final OutputDevice[] outputs = new OutputDevice[256];
+	private final InputDevice[] inputs = new InputDevice[256];
 
-	private static Map<Integer, String> labels = new HashMap<Integer, String>();
+	private static final Map<Integer, String> labels = new HashMap<Integer, String>();
 	static {
 //		labels.put(0x028e, "KEY-SCAN");
 //		labels.put(0x0296, "KEY-LINE");
@@ -61,9 +47,9 @@ public class Cpu {
 	}
 
 	private boolean enableInt = false;
+	private boolean halted = false;
 
-	private void initialiseHandlers(Handler[] array,
-			LoadableHandler... handlers) {
+	private void initialiseHandlers(Handler[] array, LoadableHandler... handlers) {
 		for (int i = 0; i < 256; i++) {
 			for (LoadableHandler handler : handlers) {
 				if (handler.willHandle(i)) {
@@ -77,7 +63,6 @@ public class Cpu {
 	}
 
 	public Cpu() {
-
 		loadSimpleHandlers();
 		initialiseHandlers(baseHandlers, new Handler_ADD(),
 				new Handler_ADD_HL(), new Handler_AND(), new Handler_CP(),
@@ -89,8 +74,11 @@ public class Cpu {
 				new Handler_RST(), new Handler_SCF_CCF(), new Handler_SUB(),
 				new Handler_XOR(), new ShiftHandler());
 
-		initialiseHandlers(extended_CB, new Handler_CB_SRL(),
-				new Handler_CB_RLC(), new Handler_CB_BIT(),
+		initialiseHandlers(extended_CB,
+				new Handler_CB_SRL(),
+				new Handler_CB_RLx(),
+				new Handler_CB_RRC(),
+				new Handler_CB_BIT(),
 				new Handler_CB_SET(),
 				new Handler_CB_RES());
 		
@@ -122,318 +110,281 @@ public class Cpu {
 
 	private void loadSimpleHandlers() {
 		// NOP
-		baseHandlers[0x00] = new Handler() {
-			public void handle(int instr) {
-				tStates += 4;
-			}
-		};
+		baseHandlers[0x00] = instr -> tStates += 4;
 		// RLCA
-		baseHandlers[0x07] = new Handler() {
-			public void handle(int instr) {
-				int bit7 = registers.reg[_A] & 0x80;
-				registers.reg[_A] = ((registers.reg[_A] << 1) | (bit7>>7)) & 0xff;
-				adjustFlag(F_H, false);
-				adjustFlag(F_N, false);
-				adjustFlag(F_C, bit7 == 0x80);
-				tStates += 4;
-			}
+		baseHandlers[0x07] = instr -> {
+			int bit7 = registers.reg[_A] & 0x80;
+			registers.reg[_A] = ((registers.reg[_A] << 1) | (bit7>>7)) & 0xff;
+			adjustFlag(F_H, false);
+			adjustFlag(F_N, false);
+			adjustFlag(F_C, bit7 == 0x80);
+			tStates += 4;
 		};
 		// RRCA
-		baseHandlers[0x0F] = new Handler() {
-			public void handle(int instr) {
-				int bit0 = registers.reg[_A] & 0x01;
-				registers.reg[_A] = (registers.reg[_A] >> 1) | (bit0 << 7);
-				adjustFlag(F_H, false);
-				adjustFlag(F_N, false);
-				adjustFlag(F_C, bit0 == 0x01);
-				tStates += 4;
-			}
+		baseHandlers[0x0F] = instr -> {
+			int bit0 = registers.reg[_A] & 0x01;
+			registers.reg[_A] = (registers.reg[_A] >> 1) | (bit0 << 7);
+			adjustFlag(F_H, false);
+			adjustFlag(F_N, false);
+			adjustFlag(F_C, bit0 == 0x01);
+			tStates += 4;
 		};
 		// DJNZ
-		baseHandlers[0x10] = new Handler() {
-			public void handle(int instr) {
-				int dist = readByteOffset();
-				registers.reg[_B] = (registers.reg[_B] - 1) & 0xff;
-				if (registers.reg[_B] != 0) {
-					registers.reg[_PC] = (registers.reg[_PC] + dist) & 0xffff;
-					tStates += 13;
-				} else {
-					tStates += 8;
-				}
+		baseHandlers[0x10] = instr -> {
+			int dist = readByteOffset();
+			registers.reg[_B] = (registers.reg[_B] - 1) & 0xff;
+			if (registers.reg[_B] != 0) {
+				registers.reg[_PC] = (registers.reg[_PC] + dist) & 0xffff;
+				tStates += 13;
+			} else {
+				tStates += 8;
 			}
 		};
 		// RLA
-		baseHandlers[0x17] = new Handler() {
-			public void handle(int instr) {
-				int bit7 = registers.reg[_A] & 0x80;
-				registers.reg[_A] = ((registers.reg[_A] << 1) | registers.getFlag(F_C)) & 0xff;
-				adjustFlag(F_H, false);
-				adjustFlag(F_N, false);
-				adjustFlag(F_C, bit7 == 0x80);
-				tStates += 4;
-			}
+		baseHandlers[0x17] = instr -> {
+			int bit7 = registers.reg[_A] & 0x80;
+			registers.reg[_A] = ((registers.reg[_A] << 1) | registers.getFlag(F_C)) & 0xff;
+			adjustFlag(F_H, false);
+			adjustFlag(F_N, false);
+			adjustFlag(F_C, bit7 == 0x80);
+			tStates += 4;
 		};
-		baseHandlers[0x1F] = new Handler() {
-			public void handle(int instr) {
-				int bit0 = registers.reg[_A] & 0x01;
-				registers.reg[_A] = (registers.reg[_A] >> 1) | ((registers.getFlag(F_C) << 7));
-				adjustFlag(F_H, false);
-				adjustFlag(F_N, false);
-				adjustFlag(F_C, bit0 == 0x01);
-				tStates += 4;
-			}
+		baseHandlers[0x1F] = instr -> {
+			int bit0 = registers.reg[_A] & 0x01;
+			registers.reg[_A] = (registers.reg[_A] >> 1) | ((registers.getFlag(F_C) << 7));
+			adjustFlag(F_H, false);
+			adjustFlag(F_N, false);
+			adjustFlag(F_C, bit0 == 0x01);
+			tStates += 4;
 		};
 		// EX AF,AF'
-		baseHandlers[0x08] = new Handler() {
-			public void handle(int instr) {
-				int tmp = registers.getAF();
-				registers.setAF(registers.reg[_XAF]);
-				registers.reg[_XAF] = tmp;
-				tStates += 4;
-			}
+		baseHandlers[0x08] = instr -> {
+			int tmp = registers.getAF();
+			registers.setAF(registers.reg[_XAF]);
+			registers.reg[_XAF] = tmp;
+			tStates += 4;
 		};
 		// LD (DE),A
-		baseHandlers[0x12] = new Handler() {
-			public void handle(int instr) {
-				memory.set8bit(registers.getDE(), registers.reg[_A]);
-				tStates += 7;
-			}
+		baseHandlers[0x12] = instr -> {
+			memory.set8bit(registers.getDE(), registers.reg[_A]);
+			tStates += 7;
 		};
 		// LD (nn),HL
-		baseHandlers[0x22] = new Handler() {
-			public void handle(int instr) {
-				memory.set16bit(readNextWord(), registers.getHL());
-				tStates += 16;
-			}
+		baseHandlers[0x22] = instr -> {
+			memory.set16bit(readNextWord(), registers.getHL());
+			tStates += 16;
 		};
 		// CPL
-		baseHandlers[0x2F] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_A] ^= 0xff;
-				adjustFlag(F_H, true);
-				adjustFlag(F_N, true);
-				tStates += 4;
-			}
+		baseHandlers[0x2F] = instr -> {
+			registers.reg[_A] ^= 0xff;
+			adjustFlag(F_H, true);
+			adjustFlag(F_N, true);
+			tStates += 4;
 		};
 		// LD (nn),HL
-		baseHandlers[0x32] = new Handler() {
-			public void handle(int instr) {
-				memory.set8bit(readNextWord(), registers.reg[_A]);
-				tStates += 13;
-			}
+		baseHandlers[0x32] = instr -> {
+			memory.set8bit(readNextWord(), registers.reg[_A]);
+			tStates += 13;
 		};
 		// LD A,(nn)
-		baseHandlers[0x3A] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_A] = memory.get8bit(readNextWord());
-				tStates += 13;
-			}
+		baseHandlers[0x3A] = instr -> {
+			registers.reg[_A] = memory.get8bit(readNextWord());
+			tStates += 13;
+		};
+		// HALT
+		baseHandlers[0x76] = instr -> {
+			halted = true;
+			tStates += 4;
 		};
 		// EXX
-		baseHandlers[0xD9] = new Handler() {
-			public void handle(int instr) {
-				registers.exx();
-				tStates += 4;
-			}
+		baseHandlers[0xD9] = instr -> {
+			registers.exx();
+			tStates += 4;
 		};
 		// JP (HL)
-		baseHandlers[0xE9] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_PC] = registers.getHL();
-				tStates += 4;
-			}
+		baseHandlers[0xE9] = instr -> {
+			registers.reg[_PC] = registers.getHL();
+			tStates += 4;
 		};
 		// DI
-		baseHandlers[0xf3] = new Handler() {
-			public void handle(int instr) {
-				registers.iff1 = registers.iff2 = false;
-				tStates += 4;
-			}
+		baseHandlers[0xf3] = instr -> {
+			registers.iff1 = registers.iff2 = false;
+			tStates += 4;
 		};
 		// EI
-		baseHandlers[0xfb] = new Handler() {
-			public void handle(int instr) {
-				enableInt = true;
-				tStates += 4;
-			}
+		baseHandlers[0xfb] = instr -> {
+			enableInt = true;
+			tStates += 4;
 		};
 		// LD SP,HL
-		baseHandlers[0xf9] = new Handler() {
-			public void handle(int instr) {
-				registers.setSP(registers.getHL());
-				tStates += 6;
-			}
+		baseHandlers[0xf9] = instr -> {
+			registers.setSP(registers.getHL());
+			tStates += 6;
 		};
 		// ADD A,N
-		baseHandlers[0xc6] = new Handler() {
-			public void handle(int instr) {
-				int arg = readNextByte();
-				set8bitAddFlags(registers.reg[_A], registers.reg[_A] + arg);
-				registers.reg[_A] = (registers.reg[_A] + arg) & 0xff;
-				tStates += 7;
-			}
+		baseHandlers[0xc6] = instr -> {
+			int arg = readNextByte();
+			set8bitAddFlags(registers.reg[_A], registers.reg[_A] + arg);
+			registers.reg[_A] = (registers.reg[_A] + arg) & 0xff;
+			tStates += 7;
+		};
+		// ADC A,N
+		baseHandlers[0xce] = instr -> {
+			int arg = readNextByte() + registers.getFlag(F_C);
+			set8bitAddFlags(registers.reg[_A], registers.reg[_A] + arg);
+			registers.reg[_A] = (registers.reg[_A] + arg) & 0xff;
+			tStates += 7;
 		};
 		// RET
-		baseHandlers[0xc9] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_PC] = pop();
-				tStates += 10;
-			}
+		baseHandlers[0xc9] = instr -> {
+			registers.reg[_PC] = pop();
+			tStates += 10;
 		};
 		// EX (SP),HL              
-		baseHandlers[0xe3] = new Handler() {
-			public void handle(int instr) {
-				int tmp = registers.getHL();
-				registers.setHL(memory.get16bit(registers.getSP()));
-				memory.set16bit(registers.getSP(), tmp);
-				tStates += 19;
-			}
+		baseHandlers[0xe3] = instr -> {
+			int tmp = registers.getHL();
+			registers.setHL(memory.get16bit(registers.getSP()));
+			memory.set16bit(registers.getSP(), tmp);
+			tStates += 19;
 		};
 		// LD A,(DE)              
-		baseHandlers[0x1a] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_A] = memory.get8bit(registers.getDE());
-				tStates += 7;
-			}
+		baseHandlers[0x1a] = instr -> {
+			registers.reg[_A] = memory.get8bit(registers.getDE());
+			tStates += 7;
 		};
 
 		// LD IX,nn
-		extended_DD[0x21] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_IX] = readNextWord();
-				tStates += 14;
-			}
+		extended_DD[0x21] = instr -> {
+			registers.reg[_IX] = readNextWord();
+			tStates += 14;
 		};
 		// ADD IX,BC
-		extended_DD[0x09] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_IX] = add16bit(registers.reg[_IX], registers.getBC());
-				tStates += 15;
-			}
+		extended_DD[0x09] = instr -> {
+			registers.reg[_IX] = add16bit(registers.reg[_IX], registers.getBC());
+			tStates += 15;
 		};
 		// JP (IX)
-		extended_DD[0xE9] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_PC] = registers.reg[_IX];
-				tStates += 8;
-			}
+		extended_DD[0xE9] = instr -> {
+			registers.reg[_PC] = registers.reg[_IX];
+			tStates += 8;
 		};
 
 		// IM 1
-		extended_ED[0x56] = new Handler() {
-			public void handle(int instr) {
-				registers.im = IntMode.IM1;
-				tStates += 8;
-			}
+		extended_ED[0x56] = instr -> {
+			registers.im = IntMode.IM1;
+			tStates += 8;
 		};
 		// IN A,(C)
-		extended_ED[0x78] = new Handler() {
-			public void handle(int instr) {
-				if(inputs[registers.reg[_C]] != null) {
-					registers.reg[_A] = inputs[registers.reg[_C]].read(registers.getBC());
-				} else {
-					registers.reg[_A] = 0;
-				}
-				tStates += 8;
+		extended_ED[0x78] = instr -> {
+			if(inputs[registers.reg[_C]] != null) {
+				registers.reg[_A] = inputs[registers.reg[_C]].read(registers.getBC());
+			} else {
+				registers.reg[_A] = 0;
 			}
+			tStates += 8;
 		};
 		// NEG
-		extended_ED[0x44] = new Handler() {
-			public void handle(int instr) {
-				int res = 0 - registers.reg[_A];
-				int preA = registers.reg[_A];
-				registers.reg[_A] = (res & 0xff);
-				
-				adjustFlag(F_S, (res & 0x80) != 0);
-				adjustFlag(F_Z, registers.reg[_A] == 0);
-				// adjustFlag(F_H, false);
-				adjustFlag(F_PV, preA == 0x80);
-				adjustFlag(F_N, true);
-				adjustFlag(F_C, preA != 0x00);
-				
-				tStates += 8;
-			}
+		extended_ED[0x44] = instr -> {
+			int res = -registers.reg[_A];
+			int preA = registers.reg[_A];
+			registers.reg[_A] = (res & 0xff);
+
+			adjustFlag(F_S, (res & 0x80) != 0);
+			adjustFlag(F_Z, registers.reg[_A] == 0);
+			// adjustFlag(F_H, false);
+			adjustFlag(F_PV, preA == 0x80);
+			adjustFlag(F_N, true);
+			adjustFlag(F_C, preA != 0x00);
+
+			tStates += 8;
 		};
 		// LD BC,(nn)
-		extended_ED[0x4b] = new Handler() {
-			public void handle(int instr) {
-				registers.setBC(memory.get16bit(readNextWord()));
-				tStates += 20;
-			}
+		extended_ED[0x4b] = instr -> {
+			registers.setBC(memory.get16bit(readNextWord()));
+			tStates += 20;
 		};
 		// LD DE,(nn)
-		extended_ED[0x5b] = new Handler() {
-			public void handle(int instr) {
-				registers.setDE(memory.get16bit(readNextWord()));
-				tStates += 20;
-			}
+		extended_ED[0x5b] = instr -> {
+			registers.setDE(memory.get16bit(readNextWord()));
+			tStates += 20;
 		};
 		// LD HL,(nn)
-		extended_ED[0x6b] = new Handler() {
-			public void handle(int instr) {
-				registers.setHL(memory.get16bit(readNextWord()));
-				tStates += 20;
-			}
+		extended_ED[0x6b] = instr -> {
+			registers.setHL(memory.get16bit(readNextWord()));
+			tStates += 20;
 		};
 		// LD SP,(nn)
-		extended_ED[0x7b] = new Handler() {
-			public void handle(int instr) {
-				registers.setSP(memory.get16bit(readNextWord()));
-				tStates += 20;
-			}
+		extended_ED[0x7b] = instr -> {
+			registers.setSP(memory.get16bit(readNextWord()));
+			tStates += 20;
 		};
 
 		// LD IY,NN
-		extended_FD[0x21] = new Handler() {
-			public void handle(int instr) {
-				registers.reg[_IY] = readNextWord();
-				tStates += 14;
-			}
+		extended_FD[0x21] = instr -> {
+			registers.reg[_IY] = readNextWord();
+			tStates += 14;
 		};
+
+		// INC (IY+d)
+		extended_FD[0x34] = instr -> {
+			int addr = registers.reg[_IY] + readNextByte();
+			memory.set8bit(addr, memory.get8bit(addr) + 1);
+			postIncrementFlagAdjust(memory.get8bit(addr));
+			tStates += 23;
+		};
+
 		// DEC (IY+d)
-		extended_FD[0x35] = new Handler() {
-			public void handle(int instr) {
-				int addr = registers.reg[_IY] + readNextByte();
-				memory.set8bit(addr, memory.get8bit(addr) - 1);
-				postDecrementFlagAdjust(memory.get8bit(addr));
-				tStates += 23;
-			}
+		extended_FD[0x35] = instr -> {
+			int addr = registers.reg[_IY] + readNextByte();
+			memory.set8bit(addr, memory.get8bit(addr) - 1);
+			postDecrementFlagAdjust(memory.get8bit(addr));
+			tStates += 23;
 		};
 		// LD (IY+d),n
-		extended_FD[0x36] = new Handler() {
-			public void handle(int instr) {
-				int addr = registers.reg[_IY] + readNextByte();
-				memory.set8bit(addr, readNextByte());
-				tStates += 19;
-			}
+		extended_FD[0x36] = instr -> {
+			int addr = registers.reg[_IY] + readNextByte();
+			memory.set8bit(addr, readNextByte());
+			tStates += 19;
 		};
 		// ADD A,(IY+d)
-		extended_FD[0x86] = new Handler() {
-			public void handle(int instr) {
-				int addr = registers.reg[_IY] + readNextByte();
-				int before = memory.get8bit(addr);
-				int after = before + registers.reg[_A];
-				registers.reg[_A] = (after & 0xff);
-				set8bitAddFlags(before, after);
-				tStates += 19;
-			}
+		extended_FD[0x86] = instr -> {
+			int addr = registers.reg[_IY] + readNextByte();
+			int before = memory.get8bit(addr);
+			int after = before + registers.reg[_A];
+			registers.reg[_A] = (after & 0xff);
+			set8bitAddFlags(before, after);
+			tStates += 19;
 		};
 		// SUB,(IY+d)
-		extended_FD[0x96] = new Handler() {
-			public void handle(int instr) {
-				int addr = registers.reg[_IY] + readNextByte();
-				int before = registers.reg[_A];
-				int after = registers.reg[_A] - memory.get8bit(addr);
-				registers.reg[_A] = (after & 0xff);
-				set8bitSubFlags(before, after);
-				tStates += 19;
-			}
+		extended_FD[0x96] = instr -> {
+			int addr = registers.reg[_IY] + readNextByte();
+			int before = registers.reg[_A];
+			int after = registers.reg[_A] - memory.get8bit(addr);
+			registers.reg[_A] = (after & 0xff);
+			set8bitSubFlags(before, after);
+			tStates += 19;
 		};
-		extended_FD[0xCB] = new Handler() {
-			public void handle(int instr) {
-				int addr = registers.reg[_IY] + readNextByte();
-				handleCB(addr, readNextByte());
-			}
+		// CP (IY+d)
+		extended_FD[0xBE] = instr -> {
+			int addr = registers.reg[_IY] + readNextByte();
+			int acc = registers.reg[_A];
+			int arg = memory.get8bit(addr);
+			int calc = acc - arg;
+
+			adjustFlag(F_S, (calc & 0x80) == 0x80);
+			adjustFlag(F_Z, (calc & 0xff) == 0x00);
+			// TODO flags = adjustFlag(flags, F_H, false);
+			adjustFlag(F_PV, (acc&0x80) != (arg&0x80) && (acc&0x80) != (calc&0x80));
+			adjustFlag(F_N, true);
+			adjustFlag(F_C, (calc & ~0xff) != 0);
+			copy35Bits(arg);
+
+			tStates += 19;
+		};
+
+		extended_FD[0xCB] = instr -> {
+			int addr = registers.reg[_IY] + readNextByte();
+			handleCB(addr, readNextByte());
 		};
 	}
 	
@@ -532,16 +483,15 @@ public class Cpu {
 	}
 
 	public void execute() {
-//		if(registers.reg[_PC] == 0x02c2) {
-//			System.out.println("de " + Integer.toHexString(
-//					registers.getDE()) + " " + registers.isFlag(F_Z));
-//		}
-		
+		if(halted) {
+			tStates += 4;
+			return;
+		}
+
 		if(labels.get(registers.reg[_PC]) != null) {
 			System.out.println(labels.get(registers.reg[_PC]));
 		}
 		int instr = readNextByte();
-		// System.out.println("i " + Integer.toHexString(instr));
 		current[instr].handle(instr);
 		if (enableInt) {
 			enableInt = false;
@@ -551,10 +501,9 @@ public class Cpu {
 
 	class NullHandler implements Handler {
 		public void handle(int instr) {
-			System.out.println("Unhandled: 0x"
-					+ Integer.toString(memory.get8bit(registers.reg[_PC-1]), 16)
-					+ " 0x" + Integer.toString(instr, 16)
-					+ " @ 0x" + Integer.toHexString(registers.reg[_PC]));
+			System.out.println("Unhandled: "
+					+ "instr=0x" + Integer.toString(instr, 16)
+					+ " pc=0x" + Integer.toHexString(registers.reg[_PC]));
 			throw new RuntimeException("Unfinished CPU at " + tStates);
 		}
 	}
@@ -730,7 +679,7 @@ public class Cpu {
 				test = registers.isFlag(F_S);
 				break;
 			}
-			test = (instr & 0x08) == 0 ? !test : test;
+			test = ((instr & 0x08) == 0) != test;
 			if (test) {
 				registers.reg[_PC] = pop();
 				tStates += 11;
@@ -816,8 +765,7 @@ public class Cpu {
 			int reg = (instr & 0x38) >> 3;
 			int res;
 			if (reg == 6) {
-				memory.set8bit(registers.getHL(),
-						memory.get8bit(registers.getHL()) + 1);
+				memory.set8bit(registers.getHL(), memory.get8bit(registers.getHL()) + 1);
 				res = memory.get8bit(registers.getHL());
 				tStates += 11;
 			} else {
@@ -826,12 +774,7 @@ public class Cpu {
 				tStates += 4;
 			}
 
-			adjustFlag(F_S, (res & 0x80) == 0x80);
-			adjustFlag(F_Z, res == 0);
-			adjustFlag(F_H, (res & 0x0f) == 0);
-			adjustFlag(F_PV, res == 0x80);
-			adjustFlag(F_N, false);
-			copy35Bits(res);
+			postIncrementFlagAdjust(res);
 		}
 
 		public boolean willHandle(int instr) {
@@ -1266,20 +1209,39 @@ public class Cpu {
 		}
 	}
 
-	class Handler_CB_RLC implements LoadableHandler {
+	class Handler_CB_RLx implements LoadableHandler {
 		public void handle(int instr) {
+			Function<Integer, Integer> func = (instr & 0xF8) == 0 ? Cpu.this::bit_RLC : Cpu.this::bit_RL;
 			int idx = instr & 0x07;
 			if(idx == 6) {
-				memory.set8bit(registers.getHL(), bit_RLC(memory.get8bit(registers.getHL())));
+				memory.set8bit(registers.getHL(), func.apply(memory.get8bit(registers.getHL())));
 				tStates += 15;
 			} else {
-				registers.reg[idx] = bit_RLC(registers.reg[idx]);
+				registers.reg[idx] = func.apply(registers.reg[idx]);
 				tStates += 8;
 			}
 		}
 
 		public boolean willHandle(int instr) {
-			return (instr & 0xF8) == 0x00;
+			// 0000 = RLC, 0001 = RL
+			return (instr & 0xF8) == 0x00 || (instr & 0xF8) == 0x10;
+		}
+	}
+
+	class Handler_CB_RRC implements LoadableHandler {
+		public void handle(int instr) {
+			int idx = instr & 0x07;
+			if(idx == 6) {
+				memory.set8bit(registers.getHL(), bit_RRC(memory.get8bit(registers.getHL())));
+				tStates += 15;
+			} else {
+				registers.reg[idx] = bit_RRC(registers.reg[idx]);
+				tStates += 8;
+			}
+		}
+
+		public boolean willHandle(int instr) {
+			return (instr & 0xF8) == 0x08;
 		}
 	}
 
@@ -1347,6 +1309,15 @@ public class Cpu {
 		throw new RuntimeException("Invalid 16 bit register request: " + arg);
 	}
 
+	private void postIncrementFlagAdjust(int result) {
+		adjustFlag(F_S, (result & 0x80) == 0x80);
+		adjustFlag(F_Z, result == 0);
+		adjustFlag(F_H, (result & 0x0f) == 0);
+		adjustFlag(F_PV, result == 0x80);
+		adjustFlag(F_N, false);
+		copy35Bits(result);
+	}
+
 	private void postDecrementFlagAdjust(int result) {
 		adjustFlag(F_S, (result & 0x80) == 0x80);
 		adjustFlag(F_Z, result == 0);
@@ -1386,15 +1357,11 @@ public class Cpu {
 	private void push(int val) {
 		registers.setSP(registers.getSP() - 2);
 		memory.set16bit(registers.getSP(), val);
-//		System.out.println("PUSH: "
-//				+ Integer.toHexString(memory.get16bit(registers.getSP()))
-//				+ " @ " + Integer.toHexString(registers.getSP()));
 	}
 
 	private int pop() {
 		int val = memory.get16bit(registers.getSP());
 		registers.setSP(registers.getSP() + 2);
-//		System.out.println("POP: " + Integer.toHexString(val));
 		return val;
 	}
 	
@@ -1440,15 +1407,36 @@ public class Cpu {
 		return rv;
 	}
 
+	public int bit_RL(final int arg) {
+		int rv = (arg << 1) & 0xff;
+		if(registers.isFlag(F_C)) {
+			rv |= 0x01;
+		}
+		setRotateFlags(rv);
+		adjustFlag(F_C, (arg & 0x80) != 0);
+		return rv;
+	}
+
 	public int bit_RLC(int arg) {
-		int rv = ((arg << 1) | (arg >> 7)) & 0xff;
+		final int rv = ((arg << 1) | (arg >> 7)) & 0xff;
+		setRotateFlags(rv);
+		adjustFlag(F_C, (arg & 0x80) != 0);
+		return rv;
+	}
+
+	public int bit_RRC(int arg) {
+		final int rv = ((arg >> 1) | (arg << 7)) & 0xff;
+		setRotateFlags(rv);
+		adjustFlag(F_C, (arg & 0x01) != 0);
+		return rv;
+	}
+
+	private void setRotateFlags(final int rv) {
 		adjustFlag(F_S, (rv & 0x80) != 0);
 		adjustFlag(F_Z, rv == 0);
 		adjustFlag(F_H, false);
 		adjustFlag(F_PV, Integer.bitCount(rv) % 2 == 0);
 		adjustFlag(F_N, false);
-		adjustFlag(F_C, (arg & 0x80) != 0);
-		return rv;
 	}
 
 	public void executeToInterrupt() {
@@ -1474,6 +1462,7 @@ public class Cpu {
 		}
 		switch(registers.im) {
 		case IM1:
+			halted = false;
 			registers.iff1 = registers.iff2 = false;
 			push(registers.reg[_PC]);
 			registers.reg[_PC] = 0x38;
