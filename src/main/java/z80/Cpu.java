@@ -268,22 +268,6 @@ public class Cpu {
             tStates += 7;
         };
 
-        // LD IX,nn
-        extended_DD[0x21] = instr -> {
-            registers.reg[_IX] = readNextWord();
-            tStates += 14;
-        };
-        // ADD IX,BC
-        extended_DD[0x09] = instr -> {
-            registers.reg[_IX] = add16bit(registers.reg[_IX], registers.getBC());
-            tStates += 15;
-        };
-        // JP (IX)
-        extended_DD[0xE9] = instr -> {
-            registers.reg[_PC] = registers.reg[_IX];
-            tStates += 8;
-        };
-
         // IM 1
         extended_ED[0x56] = instr -> {
             registers.im = IntMode.IM1;
@@ -370,94 +354,96 @@ public class Cpu {
             adjustFlagsForCompare(registers.reg[_A], content);
         };
 
-        // -------- FD --------
+        loadIndexHandlers(extended_DD, _IX);
+        loadIndexHandlers(extended_FD, _IY);
+    }
 
-        // LD IY,NN
-        extended_FD[0x21] = instr -> {
-            registers.reg[_IY] = readNextWord();
+    private void loadIndexHandlers(final Handler[] handlers, final int index) {
+        // ADD I?,BC
+        handlers[0x09] = instr -> {
+            registers.reg[index] = add16bit(registers.reg[index], registers.getBC());
+            tStates += 15;
+        };
+
+        // LD I?,NN
+        handlers[0x21] = instr -> {
+            registers.reg[index] = readNextWord();
             tStates += 14;
         };
 
-        // INC IX
-        extended_DD[0x23] = instr -> {
-            registers.reg[_IX] = (registers.reg[_IX] + 1) & 0xff;
-            // Does not affect flags
-            tStates += 10;
-        };
-        // INC IY
-        extended_FD[0x23] = instr -> {
-            registers.reg[_IY] = (registers.reg[_IY] + 1) & 0xff;
-            // Does not affect flags
+        // INC I?
+        handlers[0x23] = instr -> {
+            registers.reg[index] = (registers.reg[index] + 1) & 0xff;
             tStates += 10;
         };
 
-        // INC (IY+d)
-        extended_FD[0x34] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
+        // INC (I?+d)
+        handlers[0x34] = instr -> {
+            final int addr = registers.reg[index] + readNextByte();
             memory.set8bit(addr, memory.get8bit(addr) + 1);
             postIncrementFlagAdjust(memory.get8bit(addr));
             tStates += 23;
         };
 
-        // DEC (IY+d)
-        extended_FD[0x35] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
+        // DEC (I?+d)
+        handlers[0x35] = instr -> {
+            final int addr = registers.reg[index] + readNextByte();
             memory.set8bit(addr, memory.get8bit(addr) - 1);
             postDecrementFlagAdjust(memory.get8bit(addr));
             tStates += 23;
         };
-        // LD (IY+d),n
-        extended_FD[0x36] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
+
+        // LD (I?+d),n
+        handlers[0x36] = instr -> {
+            int addr = registers.reg[index] + readNextByte();
             memory.set8bit(addr, readNextByte());
             tStates += 19;
         };
-        // ADD A,(IY+d)
-        extended_FD[0x86] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
+
+        // ADD A,(I?+d)
+        handlers[0x86] = instr -> {
+            int addr = registers.reg[index] + readNextByte();
             int before = memory.get8bit(addr);
             int after = before + registers.reg[_A];
             registers.reg[_A] = (after & 0xff);
             set8bitAddFlags(before, after);
             tStates += 19;
         };
-        // SUB,(IY+d)
-        extended_FD[0x96] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
+
+        // SUB,(I?+d)
+        handlers[0x96] = instr -> {
+            int addr = registers.reg[index] + readNextByte();
             int before = registers.reg[_A];
             int after = registers.reg[_A] - memory.get8bit(addr);
             registers.reg[_A] = (after & 0xff);
             set8bitSubFlags(before, after);
             tStates += 19;
         };
-        // AND (IY+d)
-        extended_FD[0xA6] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
+
+        // AND (I?+d)
+        handlers[0xA6] = instr -> {
+            int addr = registers.reg[index] + readNextByte();
             registers.reg[_A] = registers.reg[_A] & addr;
             adjustFlagsForAnd(registers.reg[_A]);
             tStates += 19;
         };
+
         // CP (IY+d)
-        extended_FD[0xBE] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
-            int acc = registers.reg[_A];
-            int arg = memory.get8bit(addr);
-            int calc = acc - arg;
-
-            adjustFlag(F_S, (calc & 0x80) == 0x80);
-            adjustFlag(F_Z, (calc & 0xff) == 0x00);
-            // TODO flags = adjustFlag(flags, F_H, false);
-            adjustFlag(F_PV, (acc & 0x80) != (arg & 0x80) && (acc & 0x80) != (calc & 0x80));
-            adjustFlag(F_N, true);
-            adjustFlag(F_C, (calc & ~0xff) != 0);
-            copy35Bits(arg);
-
+        handlers[0xBE] = instr -> {
+            int addr = registers.reg[index] + readNextByte();
+            adjustFlagsForCompare(registers.reg[_A], memory.get8bit(addr));
             tStates += 19;
         };
 
-        extended_FD[0xCB] = instr -> {
-            int addr = registers.reg[_IY] + readNextByte();
+        handlers[0xCB] = instr -> {
+            int addr = registers.reg[index] + readNextByte();
             handleCB(addr, readNextByte());
+        };
+
+        // JP (I?)
+        handlers[0xE9] = instr -> {
+            registers.reg[_PC] = registers.reg[index];
+            tStates += 8;
         };
     }
 
