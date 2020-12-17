@@ -114,7 +114,11 @@ public class Registers {
 	public void setSP(int val) {
 		reg[_SP] = (val & 0xffff);
 	}
-	
+
+	public void setPC(int val) {
+		reg[_PC] = (val & 0xffff);
+	}
+
 	public int getSP() {
 		return reg[_SP];
 	}

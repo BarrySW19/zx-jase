@@ -88,13 +88,16 @@ public class RomTests {
 	}
 
 	@Test
-	public void runFromStart() {
+	public void runFromStart() throws IOException {
 		JFrame jf = new JFrame();
 		jf.add(display);
 		jf.pack();
 		jf.setVisible(true);
 		jf.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		jf.addKeyListener(display);
+
+		Z80Snapshot snapshot = new Z80Snapshot();
+		snapshot.loadIntoCpu(cpu);
 		
 		while(true) {
 //			System.out.println(Integer.toString(cpu.getRegisters().reg[_PC], 16)
