@@ -105,7 +105,10 @@ public class Cpu {
                 new Handler_LD_R_In(_IY));
 
         for (int i = 0; i < 256; i++) {
-            baseHandlers[i] = (baseHandlers[i] == null ? new NullHandler("--") : baseHandlers[i]);
+            if(baseHandlers[i] == null) {
+                baseHandlers[i] = new NullHandler("--");
+                log.warn(String.format("No base handler for 0x%02x", i));
+            }
             extended_CB[i] = (extended_CB[i] == null ? new NullHandler("CB") : extended_CB[i]);
             extended_DD[i] = (extended_DD[i] == null ? new NullHandler("DD") : extended_DD[i]);
             extended_ED[i] = (extended_ED[i] == null ? new NullHandler("ED") : extended_ED[i]);
@@ -120,6 +123,11 @@ public class Cpu {
     private void loadSimpleHandlers() {
         // NOP
         baseHandlers[0x00] = instr -> tStates += 4;
+        // LD (BC),A
+        baseHandlers[0x02] = instr -> {
+            memory.set8bit(registers.getBC(), registers.reg[_A]);
+            tStates += 7;
+        };
         // RLCA
         baseHandlers[0x07] = instr -> {
             int bit7 = registers.reg[_A] & 0x80;
@@ -129,6 +137,19 @@ public class Cpu {
             adjustFlag(F_C, bit7 == 0x80);
             tStates += 4;
         };
+        // EX AF,AF'
+        baseHandlers[0x08] = instr -> {
+            int tmp = registers.getAF();
+            registers.setAF(registers.reg[_XAF]);
+            registers.reg[_XAF] = tmp;
+            tStates += 4;
+        };
+        // LD A,(BC)
+        baseHandlers[0x0a] = instr -> {
+            registers.reg[_A] = memory.get8bit(registers.getBC());
+            tStates += 7;
+        };
+
         // RRCA
         baseHandlers[0x0F] = instr -> {
             int bit0 = registers.reg[_A] & 0x01;
@@ -149,6 +170,11 @@ public class Cpu {
                 tStates += 8;
             }
         };
+        // LD (DE),A
+        baseHandlers[0x12] = instr -> {
+            memory.set8bit(registers.getDE(), registers.reg[_A]);
+            tStates += 7;
+        };
         // RLA
         baseHandlers[0x17] = instr -> {
             int bit7 = registers.reg[_A] & 0x80;
@@ -158,6 +184,12 @@ public class Cpu {
             adjustFlag(F_C, bit7 == 0x80);
             tStates += 4;
         };
+        // LD A,(DE)
+        baseHandlers[0x1a] = instr -> {
+            registers.reg[_A] = memory.get8bit(registers.getDE());
+            tStates += 7;
+        };
+        // RRA
         baseHandlers[0x1F] = instr -> {
             int bit0 = registers.reg[_A] & 0x01;
             registers.reg[_A] = (registers.reg[_A] >> 1) | ((registers.getFlag(F_C) << 7));
@@ -165,18 +197,6 @@ public class Cpu {
             adjustFlag(F_N, false);
             adjustFlag(F_C, bit0 == 0x01);
             tStates += 4;
-        };
-        // EX AF,AF'
-        baseHandlers[0x08] = instr -> {
-            int tmp = registers.getAF();
-            registers.setAF(registers.reg[_XAF]);
-            registers.reg[_XAF] = tmp;
-            tStates += 4;
-        };
-        // LD (DE),A
-        baseHandlers[0x12] = instr -> {
-            memory.set8bit(registers.getDE(), registers.reg[_A]);
-            tStates += 7;
         };
         // LD (nn),HL
         baseHandlers[0x22] = instr -> {
@@ -200,35 +220,15 @@ public class Cpu {
             registers.reg[_A] = memory.get8bit(readNextWord());
             tStates += 13;
         };
+        // IM 1
+        extended_ED[0x56] = instr -> {
+            registers.im = IntMode.IM1;
+            tStates += 8;
+        };
         // HALT
         baseHandlers[0x76] = instr -> {
             halted = true;
             tStates += 4;
-        };
-        // EXX
-        baseHandlers[0xD9] = instr -> {
-            registers.exx();
-            tStates += 4;
-        };
-        // JP (HL)
-        baseHandlers[0xE9] = instr -> {
-            registers.reg[_PC] = registers.getHL();
-            tStates += 4;
-        };
-        // DI
-        baseHandlers[0xf3] = instr -> {
-            registers.iff1 = registers.iff2 = false;
-            tStates += 4;
-        };
-        // EI
-        baseHandlers[0xfb] = instr -> {
-            enableInt = true;
-            tStates += 4;
-        };
-        // LD SP,HL
-        baseHandlers[0xf9] = instr -> {
-            registers.setSP(registers.getHL());
-            tStates += 6;
         };
         // ADD A,N
         baseHandlers[0xc6] = instr -> {
@@ -249,29 +249,10 @@ public class Cpu {
             registers.reg[_PC] = pop();
             tStates += 10;
         };
-        // EX (SP),HL
-        baseHandlers[0xe3] = instr -> {
-            int tmp = registers.getHL();
-            registers.setHL(memory.get16bit(registers.getSP()));
-            memory.set16bit(registers.getSP(), tmp);
-            tStates += 19;
-        };
-
-        // LD A,(BC)
-        baseHandlers[0x0a] = instr -> {
-            registers.reg[_A] = memory.get8bit(registers.getBC());
-            tStates += 7;
-        };
-        // LD A,(DE)
-        baseHandlers[0x1a] = instr -> {
-            registers.reg[_A] = memory.get8bit(registers.getDE());
-            tStates += 7;
-        };
-
-        // IM 1
-        extended_ED[0x56] = instr -> {
-            registers.im = IntMode.IM1;
-            tStates += 8;
+        // EXX
+        baseHandlers[0xD9] = instr -> {
+            registers.exx();
+            tStates += 4;
         };
         // IN A,(N)
         baseHandlers[0xDB] = instr -> {
@@ -284,6 +265,40 @@ public class Cpu {
                 registers.reg[_A] = 0;
             }
             tStates += 11;
+        };
+        // SBC A,N
+        baseHandlers[0xde] = instr -> {
+            int arg = readNextByte() + registers.getFlag(F_C);
+            set8bitSubFlags(registers.reg[_A], registers.reg[_A] - arg);
+            registers.reg[_A] = (registers.reg[_A] + arg) & 0xff;
+            tStates += 7;
+        };
+        // EX (SP),HL
+        baseHandlers[0xe3] = instr -> {
+            int tmp = registers.getHL();
+            registers.setHL(memory.get16bit(registers.getSP()));
+            memory.set16bit(registers.getSP(), tmp);
+            tStates += 19;
+        };
+        // JP (HL)
+        baseHandlers[0xE9] = instr -> {
+            registers.reg[_PC] = registers.getHL();
+            tStates += 4;
+        };
+        // DI
+        baseHandlers[0xf3] = instr -> {
+            registers.iff1 = registers.iff2 = false;
+            tStates += 4;
+        };
+        // EI
+        baseHandlers[0xfb] = instr -> {
+            enableInt = true;
+            tStates += 4;
+        };
+        // LD SP,HL
+        baseHandlers[0xf9] = instr -> {
+            registers.setSP(registers.getHL());
+            tStates += 6;
         };
 
         // ------ ED -------
@@ -456,16 +471,13 @@ public class Cpu {
     }
 
     protected void set8bitAddFlags(int before, int after) {
-        int src = after - before;
-        int flags = registers.reg[_F];
-        flags = adjustFlag(flags, F_S, (after & 0x80) == 0x80);
-        flags = adjustFlag(flags, F_Z, (after & 0xff) == 0);
-        flags = adjustFlag(flags, F_H, ((before & 0x0f) + (src & 0x0f)) > 0x0f);
-        flags = adjustFlag(flags, F_PV, (before & 0x80) == (src & 0x80)
-                && (before & 0x80) != (after & 0x80));
-        flags = adjustFlag(flags, F_N, false);
-        flags = adjustFlag(flags, F_C, (after & ~0xff) != 0);
-        registers.reg[_F] = flags;
+        final int src = after - before;
+        adjustFlag(F_S, (after & 0x80) == 0x80);
+        adjustFlag(F_Z, (after & 0xff) == 0);
+        adjustFlag(F_H, ((before & 0x0f) + (src & 0x0f)) > 0x0f);
+        adjustFlag(F_PV, (before & 0x80) == (src & 0x80) && (before & 0x80) != (after & 0x80));
+        adjustFlag(F_N, false);
+        adjustFlag(F_C, (after & ~0xff) != 0);
     }
 
     private void set8bitSubFlags(int before, int after) {
@@ -473,8 +485,7 @@ public class Cpu {
         adjustFlag(F_S, (after & 0x80) == 0x80);
         adjustFlag(F_Z, after == 0);
         adjustFlag(F_H, ((before & 0x0f) - (arg & 0x0f)) < 0);
-        adjustFlag(F_PV, (before & 0x80) != (arg & 0x80)
-                && (before & 0x80) != (after & 0x80));
+        adjustFlag(F_PV, (before & 0x80) != (arg & 0x80) && (before & 0x80) != (after & 0x80));
         adjustFlag(F_N, true);
         adjustFlag(F_C, (after & ~0xff) != 0);
     }
@@ -912,14 +923,12 @@ public class Cpu {
             registers.reg[_A] = registers.reg[_A] | arg;
             int res = registers.reg[_A];
 
-            int flags = registers.reg[_F];
-            flags = adjustFlag(flags, F_S, (res & 0x80) == 0x80);
-            flags = adjustFlag(flags, F_Z, res == 0);
-            flags = adjustFlag(flags, F_H, false);
-            // flags = adjustFlag(flags, F_PV, Integer.bitCount(res) % 2 == 0);
-            flags = adjustFlag(flags, F_N, false);
-            flags = adjustFlag(flags, F_C, false);
-            registers.reg[_F] = flags;
+            adjustFlag(F_S, (res & 0x80) == 0x80);
+            adjustFlag(F_Z, res == 0);
+            adjustFlag(F_H, false);
+            // adjustFlag(F_PV, Integer.bitCount(res) % 2 == 0);
+            adjustFlag(F_N, false);
+            adjustFlag(F_C, false);
 
             tStates += 4;
         }

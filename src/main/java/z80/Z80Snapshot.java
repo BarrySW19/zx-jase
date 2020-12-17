@@ -10,7 +10,7 @@ public class Z80Snapshot {
     private int[] image = new int[64 * 1024];
 
     public Z80Snapshot() throws IOException {
-        InputStream is = ClassLoader.getSystemResourceAsStream("JSW.z80");
+        InputStream is = ClassLoader.getSystemResourceAsStream("Horace.z80");
 
         int i;
         int idx = 0;
