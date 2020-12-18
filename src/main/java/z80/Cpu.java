@@ -344,6 +344,17 @@ public class Cpu {
             registers.setHL(memory.get16bit(readNextWord()));
             tStates += 20;
         };
+        // RLD
+        extended_ED[0x6f] = instr -> {
+            int newmem = ((memory.get8bit(registers.getHL()) << 4) | (registers.reg[_A] & 0x0f)) & 0xff;
+            int newa = (registers.reg[_A] & 0xf0) | (memory.get8bit(registers.getHL()) >> 4);
+            registers.reg[_A] = newa;
+            memory.set8bit(registers.getHL(), newmem);
+            adjustFlagsNormal(newa);
+            adjustFlag(F_H, false);
+            adjustFlag(F_N, false);
+            tStates += 18;
+        };
         // IN A,(C)
         extended_ED[0x78] = instr -> {
             if (inputs[registers.reg[_C]] != null) {
