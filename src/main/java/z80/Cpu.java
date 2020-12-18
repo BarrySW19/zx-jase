@@ -5,9 +5,10 @@ import org.slf4j.LoggerFactory;
 import z80.Registers.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
-import java.util.logging.Handler;
 
 import static z80.Registers.*;
 
@@ -85,13 +86,14 @@ public class Cpu {
                 new Handler_CB_SRA(),
                 new Handler_CB_SLA(),
                 new Handler_CB_RLx(),
-                new Handler_CB_RRC(),
+                new Handler_CB_RRx(),
                 new Handler_CB_BIT(),
                 new Handler_CB_SET(),
                 new Handler_CB_RES());
 
         initialiseHandlers(extended_ED,
                 new Handler_ED_LD_I_A(),
+                new Handler_ADC_HL(),
                 new Handler_SBC_HL(),
                 new Handler_LD_NN_RR(),
                 new Handler_LDDR());
@@ -105,7 +107,7 @@ public class Cpu {
                 new Handler_LD_R_In(_IY));
 
         for (int i = 0; i < 256; i++) {
-            if(baseHandlers[i] == null) {
+            if (baseHandlers[i] == null) {
                 baseHandlers[i] = new NullHandler("--");
                 log.warn(String.format("No base handler for 0x%02x", i));
             }
@@ -202,6 +204,10 @@ public class Cpu {
         baseHandlers[0x22] = instr -> {
             memory.set16bit(readNextWord(), registers.getHL());
             tStates += 16;
+        };
+        // DAA
+        baseHandlers[0x27] = instr -> {
+            daa();
         };
         // CPL
         baseHandlers[0x2F] = instr -> {
@@ -324,6 +330,10 @@ public class Cpu {
             registers.setBC(memory.get16bit(readNextWord()));
             tStates += 20;
         };
+        // IN E,(c)
+        extended_ED[0x58] = instr -> {
+            log.warn("Not implemented IN E,(c)");
+        };
         // LD DE,(nn)
         extended_ED[0x5b] = instr -> {
             registers.setDE(memory.get16bit(readNextWord()));
@@ -360,7 +370,20 @@ public class Cpu {
             int content = memory.get8bit(registers.getHL());
             registers.setHL(registers.getHL() + 1);
             registers.setBC(registers.getBC() - 1);
-            if(registers.getBC() != 0 && registers.reg[_A] != content) {
+            if (registers.getBC() != 0 && registers.reg[_A] != content) {
+                registers.setPC(registers.reg[_PC] - 2);
+                tStates += 21;
+            } else {
+                tStates += 16;
+            }
+            adjustFlagsForCompare(registers.reg[_A], content);
+        };
+        // CPDR
+        extended_ED[0xb9] = instr -> {
+            int content = memory.get8bit(registers.getHL());
+            registers.setHL(registers.getHL() - 1);
+            registers.setBC(registers.getBC() - 1);
+            if (registers.getBC() != 0 && registers.reg[_A] != content) {
                 registers.setPC(registers.reg[_PC] - 2);
                 tStates += 21;
             } else {
@@ -369,14 +392,42 @@ public class Cpu {
             adjustFlagsForCompare(registers.reg[_A], content);
         };
 
+        // RETI
+        extended_ED[0x4d] = instr -> {
+            registers.reg[_PC] = pop();
+            tStates += 14;
+        };
+
         loadIndexHandlers(extended_DD, _IX);
         loadIndexHandlers(extended_FD, _IY);
+    }
+
+    private void daa() {
+        final Optional<DaaRule> daaRule = DAA_RULES.stream()
+                .filter(r -> r.testRule(registers.reg[_A], registers.isFlag(F_C), registers.isFlag(F_H)))
+                .findFirst();
+        if(daaRule.isPresent()) {
+            registers.reg[_A] = (registers.reg[_A] + daaRule.get().getValueToAdd()) & 0xff;
+            registers.setFlag(F_C, daaRule.get().isNewCarry());
+        }
+        adjustFlagsNormal(registers.reg[_A]);
+        tStates += 4;
+    }
+
+    private boolean range(int val, int lower, int upper) {
+        return val >= lower && val <= upper;
     }
 
     private void loadIndexHandlers(final Handler[] handlers, final int index) {
         // ADD I?,BC
         handlers[0x09] = instr -> {
             registers.reg[index] = add16bit(registers.reg[index], registers.getBC());
+            tStates += 15;
+        };
+
+        // ADD I?,DE
+        handlers[0x19] = instr -> {
+            registers.reg[index] = add16bit(registers.reg[index], registers.getDE());
             tStates += 15;
         };
 
@@ -390,6 +441,25 @@ public class Cpu {
         handlers[0x23] = instr -> {
             registers.reg[index] = (registers.reg[index] + 1) & 0xff;
             tStates += 10;
+        };
+
+        // LD I?H,N (undoc)
+        handlers[0x26] = instr -> {
+            registers.reg[index] = (registers.reg[index] & 0xff) | (readNextByte() << 8);
+            tStates += 15; // ??
+        };
+
+        // ADD I?,I?
+        handlers[0x29] = instr -> {
+            registers.reg[index] = add16bit(registers.reg[index], registers.reg[index]);
+            tStates += 15;
+        };
+
+        // LD I?,(nn)
+        handlers[0x2a] = instr -> {
+            int addr = readNextWord();
+            registers.reg[index] = getMemory().get16bit(addr);
+            tStates += 20;
         };
 
         // INC (I?+d)
@@ -413,6 +483,24 @@ public class Cpu {
             int addr = registers.reg[index] + readNextByte();
             memory.set8bit(addr, readNextByte());
             tStates += 19;
+        };
+
+        // ADD I?,I?
+        handlers[0x39] = instr -> {
+            registers.reg[index] = add16bit(registers.reg[index], registers.getSP());
+            tStates += 15;
+        };
+
+        // LD I?L,A (undoc)
+        handlers[0x6f] = instr -> {
+            registers.reg[index] = (registers.reg[index] & 0xff00) | registers.reg[_A];
+            tStates += 15; // ??
+        };
+
+        // LD A,I?L (undoc)
+        handlers[0x7d] = instr -> {
+            registers.reg[_A] = (registers.reg[index] & 0xff);
+            tStates += 15; // ??
         };
 
         // ADD A,(I?+d)
@@ -453,6 +541,18 @@ public class Cpu {
         handlers[0xCB] = instr -> {
             int addr = registers.reg[index] + readNextByte();
             handleCB(addr, readNextByte());
+        };
+
+        // POP I?
+        handlers[0xE1] = instr -> {
+            registers.reg[index] = pop();
+            tStates += 15;
+        };
+
+        // PUSH I?
+        handlers[0xE5] = instr -> {
+            push(registers.reg[index]);
+            tStates += 15;
         };
 
         // JP (I?)
@@ -720,8 +820,7 @@ public class Cpu {
             int res = preHL + arg;
             registers.setHL(res & 0xffff);
 
-            adjustFlag(F_H,
-                    ((preHL & 0x0fff) + (arg & 0x0fff)) > 0x0fff);
+            adjustFlag(F_H, ((preHL & 0x0fff) + (arg & 0x0fff)) > 0x0fff);
             adjustFlag(F_N, false);
             adjustFlag(F_C, (res & ~0xffff) != 0);
             copy35Bits(registers.reg[_H]);
@@ -959,11 +1058,15 @@ public class Cpu {
         }
     }
 
-    private void adjustFlagsForAnd(int res) {
+    private void adjustFlagsNormal(int res) {
         adjustFlag(F_S, (res & 0x80) == 0x80);
         adjustFlag(F_Z, res == 0);
-        adjustFlag(F_H, true);
         adjustFlag(F_PV, Integer.bitCount(res) % 2 == 0);
+    }
+
+    private void adjustFlagsForAnd(int res) {
+        adjustFlagsNormal(res);
+        adjustFlag(F_H, true);
         adjustFlag(F_N, false);
         adjustFlag(F_C, false);
         copy35Bits(res);
@@ -1211,9 +1314,11 @@ public class Cpu {
 
     class Handler_LD_In_R implements LoadableHandler {
         private final int reg;
+
         public Handler_LD_In_R(int reg) {
             this.reg = reg;
         }
+
         public void handle(int instr) {
             int addr = registers.reg[reg] + readNextByte();
             memory.set8bit(addr, registers.reg[instr & 0x07]);
@@ -1227,9 +1332,11 @@ public class Cpu {
 
     class Handler_LD_R_In implements LoadableHandler {
         private final int reg;
+
         public Handler_LD_R_In(int reg) {
             this.reg = reg;
         }
+
         public void handle(int instr) {
             int addr = registers.reg[reg] + readNextByte();
             registers.reg[(instr & 0x38) >> 3] = memory.get8bit(addr);
@@ -1342,25 +1449,26 @@ public class Cpu {
         }
 
         public boolean willHandle(int instr) {
-            // 0000 = RLC, 0001 = RL
+            // 1st 5 bits - 00000 = RLC, 00010 = RL
             return (instr & 0xF8) == 0x00 || (instr & 0xF8) == 0x10;
         }
     }
 
-    class Handler_CB_RRC implements LoadableHandler {
+    class Handler_CB_RRx implements LoadableHandler {
         public void handle(int instr) {
+            Function<Integer, Integer> func = (instr & 0xF8) == 0 ? Cpu.this::bit_RRC : Cpu.this::bit_RR;
             int idx = instr & 0x07;
             if (idx == 6) {
-                memory.set8bit(registers.getHL(), bit_RRC(memory.get8bit(registers.getHL())));
+                memory.set8bit(registers.getHL(), func.apply(memory.get8bit(registers.getHL())));
                 tStates += 15;
             } else {
-                registers.reg[idx] = bit_RRC(registers.reg[idx]);
+                registers.reg[idx] = func.apply(registers.reg[idx]);
                 tStates += 8;
             }
         }
 
         public boolean willHandle(int instr) {
-            return (instr & 0xF8) == 0x08;
+            return (instr & 0xF8) == 0x08 || (instr & 0xF8) == 0x18;
         }
     }
 
@@ -1411,6 +1519,29 @@ public class Cpu {
 
         public boolean willHandle(int instr) {
             return (instr & 0xCF) == 0x42;
+        }
+    }
+
+    class Handler_ADC_HL implements LoadableHandler {
+        public void handle(int instr) {
+            int preHL = registers.getHL();
+            int arg = get16bitRegister((instr & 0x30) >> 4);
+            arg += registers.getFlag(F_C);
+            int res = preHL + arg;
+            registers.setHL(res & 0xffff);
+
+            adjustFlag(F_S, (registers.getHL() & 0x8000) == 0x8000);
+            adjustFlag(F_Z, registers.getHL() == 0);
+            adjustFlag(F_H, ((preHL & 0x0fff) < (arg & 0x0fff)));
+            adjustFlag(F_N, false);
+            adjustFlag(F_C, (res & ~0xffff) != 0);
+            copy35Bits(registers.reg[_H]);
+
+            tStates += 15;
+        }
+
+        public boolean willHandle(int instr) {
+            return (instr & 0xCF) == 0x4a;
         }
     }
 
@@ -1565,6 +1696,16 @@ public class Cpu {
         return rv;
     }
 
+    public int bit_RR(int arg) {
+        int rv = arg >> 1;
+        if (registers.isFlag(F_C)) {
+            rv |= 0x80;
+        }
+        setRotateFlags(rv);
+        adjustFlag(F_C, (arg & 0x01) != 0);
+        return rv;
+    }
+
     public int bit_RRC(int arg) {
         final int rv = ((arg >> 1) | (arg << 7)) & 0xff;
         setRotateFlags(rv);
@@ -1599,12 +1740,12 @@ public class Cpu {
 
     public void maskableInterrupt() {
         if (!registers.iff1) {
-			halted = false;
+            halted = false;
             return;
         }
         switch (registers.im) {
             case IM0:
-				halted = false;
+                halted = false;
                 break;
             case IM1:
                 halted = false;
@@ -1612,8 +1753,10 @@ public class Cpu {
                 push(registers.reg[_PC]);
                 registers.reg[_PC] = 0x38;
                 break;
-            default:
-                throw new UnsupportedOperationException("IM " + registers.im + " not supported");
+            case IM2:
+                halted = false;
+//                log.warn("IM2 unsupported");
+                break;
         }
     }
 
@@ -1623,5 +1766,55 @@ public class Cpu {
 
     interface LoadableHandler extends Handler {
         boolean willHandle(int instr);
+    }
+
+    private List<DaaRule> DAA_RULES = List.of(
+            new DaaRule(c -> !c, u -> range(u, 0x00, 0x09), h -> !h, l -> range(l, 0x00, 0x09), 0x00, false),
+            new DaaRule(c -> !c, u -> range(u, 0x00, 0x08), h -> !h, l -> range(l, 0x0a, 0x0f), 0x06, false),
+            new DaaRule(c -> !c, u -> range(u, 0x00, 0x09), h ->  h, l -> range(l, 0x00, 0x03), 0x06, false),
+            new DaaRule(c -> !c, u -> range(u, 0x0a, 0x0f), h -> !h, l -> range(l, 0x00, 0x09), 0x60, true),
+            new DaaRule(c -> !c, u -> range(u, 0x09, 0x0f), h -> !h, l -> range(l, 0x0a, 0x0f), 0x66, true),
+            new DaaRule(c -> !c, u -> range(u, 0x0a, 0x0f), h ->  h, l -> range(l, 0x00, 0x03), 0x66, true),
+            new DaaRule(c ->  c, u -> range(u, 0x00, 0x02), h -> !h, l -> range(l, 0x00, 0x09), 0x60, true),
+            new DaaRule(c ->  c, u -> range(u, 0x00, 0x02), h -> !h, l -> range(l, 0x0a, 0x0f), 0x66, true),
+            new DaaRule(c ->  c, u -> range(u, 0x00, 0x03), h ->  h, l -> range(l, 0x00, 0x03), 0x66, true),
+            new DaaRule(c -> !c, u -> range(u, 0x00, 0x09), h -> !h, l -> range(l, 0x00, 0x09), 0x00, false),
+            new DaaRule(c -> !c, u -> range(u, 0x00, 0x08), h ->  h, l -> range(l, 0x06, 0x0f), 0xfa, false),
+            new DaaRule(c ->  c, u -> range(u, 0x07, 0x0f), h -> !h, l -> range(l, 0x00, 0x09), 0xa0, true),
+            new DaaRule(c ->  c, u -> range(u, 0x06, 0x07), h ->  h, l -> range(l, 0x06, 0x0f), 0x9a, true)
+    );
+
+    private static class DaaRule {
+        private final Function<Boolean, Boolean> carryRule;
+        private final Function<Integer, Boolean> upperRule;
+        private final Function<Boolean, Boolean> halfRule;
+        private final Function<Integer, Boolean> lowerRule;
+        private final int valueToAdd;
+        private final boolean newCarry;
+
+        private DaaRule(Function<Boolean, Boolean> carryRule, Function<Integer, Boolean> upperRule,
+                        Function<Boolean, Boolean> halfRule, Function<Integer, Boolean> lowerRule, int add, boolean carry) {
+            this.carryRule = carryRule;
+            this.upperRule = upperRule;
+            this.halfRule = halfRule;
+            this.lowerRule = lowerRule;
+            this.valueToAdd = add;
+            this.newCarry = carry;
+        }
+
+        public boolean testRule(int value, boolean carry, boolean halfCarry) {
+            int hexUpper = value >> 4;
+            int hexLower = value & 0x0f;
+            return carryRule.apply(carry) && upperRule.apply(hexUpper)
+                    && halfRule.apply(halfCarry) && lowerRule.apply(hexLower);
+        }
+
+        public int getValueToAdd() {
+            return valueToAdd;
+        }
+
+        public boolean isNewCarry() {
+            return newCarry;
+        }
     }
 }

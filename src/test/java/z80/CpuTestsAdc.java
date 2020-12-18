@@ -107,6 +107,26 @@ public class CpuTestsAdc {
         assertFalse(registers.isFlag(F_C));
     }
 
+    @Test
+    public void test_ADC_HL_DE_no_carry() {
+        registers.setHL(0x1234);
+        registers.setDE(0x2222);
+        registers.clearFlag(F_C);
+        execute(0xed, 0x5a);
+        assertEquals(0x3456, registers.getHL());
+        assertFalse(registers.isFlag(F_C));
+    }
+
+    @Test
+    public void test_ADC_HL_SP_carry() {
+        registers.setHL(0x1234);
+        registers.setSP(0x2222);
+        registers.setFlag(F_C);
+        execute(0xed, 0x7a);
+        assertEquals(0x3457, registers.getHL());
+        assertFalse(registers.isFlag(F_C));
+    }
+
     private void execute(int... val) {
         for (int i = 0; i < val.length; i++) {
             cpu.getMemory().set8bit(cpu.getRegisters().reg[_PC] + i, val[i]);

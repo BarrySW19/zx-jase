@@ -1,23 +1,32 @@
 package z80;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.InputStream;
 
 import static z80.Registers.*;
 
 public class Z80Snapshot {
+    private static final Logger log = LoggerFactory.getLogger(Z80Snapshot.class);
 
-    private int[] image = new int[64 * 1024];
+    private int[] image;
 
     public Z80Snapshot() throws IOException {
-        InputStream is = ClassLoader.getSystemResourceAsStream("Horace.z80");
+        InputStream is = ClassLoader.getSystemResourceAsStream("Dam.z80");
+        int[] data = new int[256 * 1024];
 
         int i;
         int idx = 0;
         while((i = is.read()) != -1) {
-            image[idx++] = i;
+            data[idx++] = i;
         }
         is.close();
+
+        image = new int[idx];
+        System.arraycopy(data, 0, image, 0, idx);
+        log.info("Loaded: {} bytes", image.length);
     }
 
     public void loadIntoCpu(Cpu cpu) {
@@ -65,10 +74,42 @@ public class Z80Snapshot {
                 break;
         }
 
+        if(cpu.getRegisters().getPC() == 0) {
+            log.info("Additional block = {}", word(30));
+            int nextBlock = 32 + word(30);
+            while (nextBlock < image.length) {
+                log.info("Block length = {}", word(nextBlock));
+                int pageType = image[nextBlock + 2];
+                log.info("Page no = {}", pageType);
+                int location;
+                switch (pageType) {
+                    case 4:
+                        location = 0x8000;
+                        break;
+                    case 5:
+                        location = 0xc000;
+                        break;
+                    case 8:
+                        location = 0x4000;
+                        break;
+                    default:
+                        throw new RuntimeException("Unsupported page type: " + pageType);
+                }
+                readBlockFrom(cpu, nextBlock + 3, 16384, location);
+                nextBlock = nextBlock + 3 + word(nextBlock);
+            }
+            cpu.getRegisters().setPC(word(32));
+        } else {
+            readBlockFrom(cpu, 30, 48 * 1024, 16 * 1024);
+        }
+        System.out.println("Loaded");
+    }
+
+    private void readBlockFrom(Cpu cpu, int start, int size, int location) {
         int loaded = 0;
-        int adr = 30;
-        int mem = 16 * 1024;
-        while (loaded < 48 * 1024) {
+        int adr = start;
+        int mem = location;
+        while (loaded < size) {
             if(image[adr] == 0xed && image[adr + 1] == 0xed) {
                 for(int i = 0; i < image[adr + 2]; i++) {
                     cpu.getMemory().set8bit(mem++, image[adr + 3]);
@@ -80,7 +121,6 @@ public class Z80Snapshot {
                 loaded++;
             }
         }
-        System.out.println("Loaded");
     }
 
     private int word(int idx) {

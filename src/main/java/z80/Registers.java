@@ -23,7 +23,7 @@ public class Registers {
 	static int _E = 3;
 	static int _H = 4;
 	static int _L = 5;
-	// 6 unused
+	// 6 unused - usually means (HL)
 	static int _A = 7;
 	
 	static int _F = 8;
@@ -75,13 +75,21 @@ public class Registers {
 		reg[_F] |= 1 << c;
 	}
 
+	public void setFlag(int c, boolean value) {
+		if(value) {
+			setFlag(c);
+		} else {
+			clearFlag(c);
+		}
+	}
+
 	public int getAF() {
-		return reg[_F] << 8 | reg[_A];
+		return reg[_A] << 8 | reg[_F];
 	}
 	
 	public void setAF(int val) {
-		reg[_F] = (val & 0xff00) >> 8;
-		reg[_A] = (val & 0xff);
+		reg[_A] = (val & 0xff00) >> 8;
+		reg[_F] = (val & 0xff);
 	}
 	
 	public int getBC() {
@@ -117,6 +125,10 @@ public class Registers {
 
 	public void setPC(int val) {
 		reg[_PC] = (val & 0xffff);
+	}
+
+	public int getPC() {
+		return reg[_PC] & 0xffff;
 	}
 
 	public int getSP() {

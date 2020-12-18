@@ -98,7 +98,7 @@ public class RomTests {
 
 		Z80Snapshot snapshot = new Z80Snapshot();
 		snapshot.loadIntoCpu(cpu);
-		
+
 		while(true) {
 //			System.out.println(Integer.toString(cpu.getRegisters().reg[_PC], 16)
 //					+ " " + Integer.toString(cpu.getMemory().get8bit(cpu.getRegisters().reg[_PC]), 16));
